@@ -2,6 +2,14 @@
 
 Go implementations of cloud-native patterns 
 
+## Install
+
+Requires Go 1.24+.
+
+```bash
+go get github.com/D-Andreev/cloudnative-patterns@v0.1.0
+```
+
 ## [Circuit breaker](https://www.geeksforgeeks.org/system-design/what-is-circuit-breaker-pattern-in-microservices/)
 
 > Temporarily block access to a remote service or resource after failures reach a threshold, instead of repeatedly retrying an operation that's likely to fail. This approach handles faults that take varying amounts of time to recover from, lets the failing service recover, and improves the stability and resiliency of an application.

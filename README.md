@@ -7,7 +7,7 @@ Go implementations of cloud-native patterns
 Requires Go 1.24+.
 
 ```bash
-go get github.com/D-Andreev/cloudnative-patterns@v0.1.0
+go get github.com/D-Andreev/cloudnative-patterns
 ```
 
 ## [Circuit breaker](https://www.geeksforgeeks.org/system-design/what-is-circuit-breaker-pattern-in-microservices/)

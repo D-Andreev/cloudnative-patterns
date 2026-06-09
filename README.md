@@ -48,19 +48,16 @@ func main() {
 			fmt.Printf("call %d: success, state=%s\n", i, b.State())
 		}
 	}
-
-	// Output:
-	// call 1: downstream failed (timeout), state=closed
-  // call 2: downstream failed (timeout), state=closed
-  // call 3: downstream failed (timeout), state=open
-  // call 4: circuit open — fast fail (service unavailable), state=open
-  // call 5: circuit open — fast fail (service unavailable), state=open
 }
 ```
 
 Output
 ```sh
-
+call 1: downstream failed (timeout), state=closed
+call 2: downstream failed (timeout), state=closed
+call 3: downstream failed (timeout), state=open
+call 4: circuit open — fast fail (service unavailable), state=open
+call 5: circuit open — fast fail (service unavailable), state=open
 ```
 
 ## Development

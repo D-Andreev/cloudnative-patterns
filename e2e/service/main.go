@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	circuitbreaker "github.com/cloudnative-patterns/pkg/circuit_breaker"
+	circuitbreaker "github.com/D-Andreev/cloudnative-patterns/pkg/circuit_breaker"
 )
 
 var isFailure = func(err error) bool {

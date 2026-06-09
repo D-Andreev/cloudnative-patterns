@@ -1,4 +1,4 @@
-module github.com/cloudnative-patterns
+module github.com/D-Andreev/cloudnative-patterns
 
 go 1.24.2
 

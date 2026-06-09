@@ -15,7 +15,7 @@ import (
 	"context"
 	"errors"
 
-	breaker "github.com/cloudnative-patterns/pkg/circuit_breaker"
+	breaker "github.com/D-Andreev/cloudnative-patterns/pkg/circuit_breaker"
 )
 
 func callDownstream(ctx context.Context) (string, error) {

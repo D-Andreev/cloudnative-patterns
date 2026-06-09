@@ -4,8 +4,6 @@ Go implementations of cloud-native patterns
 
 ## Install
 
-Requires Go 1.24+.
-
 ```bash
 go get github.com/D-Andreev/cloudnative-patterns
 ```

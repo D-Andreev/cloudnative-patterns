@@ -83,6 +83,45 @@ func TestDebounceFnFunctionFirst(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+func TestDebounceFirstFnWaitsForInFlightCall(t *testing.T) {
+	d, err := NewDebounce[string](Settings{
+		DebounceType: FunctionFirst,
+		Duration:     1 * time.Second,
+	})
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	var calls int
+	call := d.DebounceFirstFn(func(ctx context.Context) (string, error) {
+		calls++
+		close(started)
+		select {
+		case <-time.After(100 * time.Millisecond):
+			return "ok", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+
+	done := make(chan struct{})
+	var res2 string
+	var err2 error
+	go func() {
+		defer close(done)
+		<-started
+		res2, err2 = call(context.Background())
+	}()
+
+	res1, err1 := call(context.Background())
+	require.NoError(t, err1)
+	assert.Equal(t, "ok", res1)
+
+	<-done
+	require.NoError(t, err2)
+	assert.Equal(t, "ok", res2)
+	assert.Equal(t, 1, calls)
+}
+
 func TestDebounceFnFunctionLast(t *testing.T) {
 	d, err := NewDebounce[string](Settings{
 		DebounceType: FunctionLast,

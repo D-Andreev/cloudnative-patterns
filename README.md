@@ -1,6 +1,14 @@
 # cloudnative-patterns
+<p align="center">
+  <a href="https://github.com/D-Andreev/cloudnative-patterns/actions/workflows/ci.yml">
+    <img src="https://github.com/D-Andreev/cloudnative-patterns/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="https://godoc.org/github.com/D-Andreev/cloudnative-patterns">
+    <img src="https://godoc.org/github.com/D-Andreev/cloudnative-patterns?status.svg" alt="GoDoc">
+  </a>
+</p>
 
-Go implementations of cloud-native patterns 
+Implementations of various cloud native patterns with Go.
 
 ## Install
 
@@ -12,8 +20,16 @@ go get github.com/D-Andreev/cloudnative-patterns
 
 > Temporarily block access to a remote service or resource after failures reach a threshold, instead of repeatedly retrying an operation that's likely to fail. This approach handles faults that take varying amounts of time to recover from, lets the failing service recover, and improves the stability and resiliency of an application.
 
-Wrap a function that may fail. After N failures the breaker opens and returns fast without calling the dependency. After a cooldown it probes in half-open state to see if the service has recovered.
+### States
 
+| State | Behavior |
+|-------|----------|
+| **Closed** | Normal operation. Every call reaches the downstream function. Failures counted by `IsFailure` accumulate; a success resets the count. When failures reach `Threshold`, the breaker opens. |
+| **Open** | The dependency is treated as unavailable. Calls fail immediately with `BreakerErrResponse` without invoking the downstream function. After a cooldown, the breaker moves to half-open. |
+| **Half-open** | A single probe call is allowed to test recovery. If it succeeds, the breaker closes and the failure count resets. If it fails, the breaker opens again with a longer cooldown. Concurrent callers while a probe is in flight also receive `BreakerErrResponse`. |
+
+
+### Usage
 ```go
 package main
 

@@ -5,6 +5,7 @@ package circuitbreaker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,6 +42,50 @@ func (s State) String() string {
 	}
 }
 
+// OpenStrategy selects how long the circuit stays open before half-open.
+type OpenStrategy int
+
+const (
+	// OpenExponential doubles the open duration after each reopen (default).
+	// Duration is Base * 2^d, where d is failures past Threshold.
+	OpenExponential OpenStrategy = iota
+	// OpenFixed uses Base every time the circuit reopens.
+	OpenFixed
+	// OpenLinear increases linearly: Base * (d + 1).
+	OpenLinear
+)
+
+// OpenBackoff configures how long the circuit remains open.
+type OpenBackoff struct {
+	// Strategy selects the backoff algorithm. Defaults to OpenExponential.
+	Strategy OpenStrategy
+	// Base is the starting open duration. Defaults to 2s.
+	Base time.Duration
+	// Max caps the computed duration. Zero means no cap.
+	Max time.Duration
+}
+
+// Duration returns how long the circuit should stay open for the given number of
+// failures past Threshold.
+func (ob OpenBackoff) Duration(failuresPastThreshold int) time.Duration {
+	d := max(failuresPastThreshold, 0)
+	var delay time.Duration
+
+	switch ob.Strategy {
+	case OpenFixed:
+		delay = ob.Base
+	case OpenLinear:
+		delay = ob.Base * time.Duration(d+1)
+	default:
+		delay = time.Duration(int64(ob.Base) * (1 << d))
+	}
+
+	if ob.Max > 0 && delay > ob.Max {
+		return ob.Max
+	}
+	return delay
+}
+
 // Circuit is a function that may fail and is protected by the breaker.
 type Circuit[T any] func(context.Context) (T, error)
 
@@ -56,11 +101,15 @@ type Settings struct {
 	// Threshold is the number of consecutive failures before the circuit opens.
 	// Must be at least 1.
 	Threshold int `validate:"required,min=1"`
+	// OpenBackoff configures open-state duration. Zero value uses exponential
+	// backoff with a 2s base and no cap.
+	OpenBackoff OpenBackoff
 }
 
 // Breaker executes a Circuit with open, closed, and half-open state transitions.
 type Breaker[T any] struct {
 	isFailure     IsFailureFunc
+	openBackoff   OpenBackoff
 	mu            sync.Mutex
 	state         State
 	threshold     int
@@ -68,6 +117,8 @@ type Breaker[T any] struct {
 	last          time.Time
 	probeInFlight bool
 }
+
+const defaultOpenBase = 2 * time.Second
 
 // NewBreaker validates settings and returns a breaker in the closed state.
 func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
@@ -77,11 +128,33 @@ func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 		return nil, err
 	}
 
+	openBackoff, err := normalizeOpenBackoff(settings.OpenBackoff)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Breaker[T]{
-		isFailure: settings.IsFailure,
-		state:     Closed,
-		threshold: settings.Threshold,
+		isFailure:   settings.IsFailure,
+		openBackoff: openBackoff,
+		state:       Closed,
+		threshold:   settings.Threshold,
 	}, nil
+}
+
+func normalizeOpenBackoff(ob OpenBackoff) (OpenBackoff, error) {
+	if ob.Strategy < OpenExponential || ob.Strategy > OpenLinear {
+		return OpenBackoff{}, fmt.Errorf("invalid open backoff strategy: %d", ob.Strategy)
+	}
+
+	if ob.Base <= 0 {
+		ob.Base = defaultOpenBase
+	}
+
+	if ob.Max > 0 && ob.Max < ob.Base {
+		return OpenBackoff{}, errors.New("open backoff max must be greater than or equal to base")
+	}
+
+	return ob, nil
 }
 
 // State returns the current breaker state.
@@ -93,7 +166,7 @@ func (b *Breaker[T]) State() State {
 
 func (b *Breaker[T]) retryAt() time.Time {
 	d := max(b.failures-b.threshold, 0)
-	return b.last.Add(time.Duration(2<<d) * time.Second)
+	return b.last.Add(b.openBackoff.Duration(d))
 }
 
 func (b *Breaker[T]) tryAcquireProbe() bool {

@@ -25,7 +25,7 @@ go get github.com/D-Andreev/cloudnative-patterns
 | State | Behavior |
 |-------|----------|
 | **Closed** | Normal operation. Every call reaches the downstream function. Failures counted by `IsFailure` accumulate; a success resets the count. When failures reach `Threshold`, the breaker opens. |
-| **Open** | The dependency is treated as unavailable. Calls fail immediately with `BreakerErrResponse` without invoking the downstream function. After a cooldown, the breaker moves to half-open. |
+| **Open** | The dependency is treated as unavailable. Calls fail immediately with `BreakerErrResponse` without invoking the downstream function. After an open duration (see `OpenBackoff`), the breaker moves to half-open. |
 | **Half-open** | A single probe call is allowed to test recovery. If it succeeds, the breaker closes and the failure count resets. If it fails, the breaker opens again with a longer cooldown. Concurrent callers while a probe is in flight also receive `BreakerErrResponse`. |
 
 
@@ -87,3 +87,33 @@ call 5: circuit open — fast fail (service unavailable), state=open
 |-------|------|-------------|
 | `IsFailure` | `func(error) bool` | Called after each downstream invocation. Return `true` if the error should count toward opening the circuit (e.g. timeouts, 5xx). Return `false` for errors that should not trip the breaker (e.g. client validation errors). Required, must not be nil. |
 | `Threshold` | `int` | Number of consecutive failures (as determined by `IsFailure`) before the circuit opens. Must be at least `1`. |
+| `OpenBackoff` | `OpenBackoff` | How long the circuit stays open before probing half-open. Optional; defaults to exponential backoff with a `2s` base and no cap. |
+
+#### Open backoff strategies
+
+`OpenBackoff` controls how long the circuit remains open. `d` is the number of failures past `Threshold` (0 on first open, 1 after a failed half-open probe, and so on).
+
+| Strategy | Constant | Duration | Example (Base = 2s) |
+|----------|----------|----------|---------------------|
+| Exponential (default) | `OpenExponential` | `Base × 2^d` | 2s, 4s, 8s, 16s… |
+| Fixed | `OpenFixed` | `Base` | 2s, 2s, 2s… |
+| Linear | `OpenLinear` | `Base × (d + 1)` | 2s, 4s, 6s, 8s… |
+
+Set `OpenBackoff.Max` to cap the computed duration. Omit `OpenBackoff` entirely to keep the default exponential strategy with a `2s` base.
+
+```go
+import (
+    "time"
+
+    breaker "github.com/D-Andreev/cloudnative-patterns/pkg/circuit_breaker"
+)
+
+settings := breaker.Settings{
+    IsFailure: func(err error) bool { return err != nil },
+    Threshold: 3,
+    OpenBackoff: breaker.OpenBackoff{
+        Strategy: breaker.OpenFixed,
+        Base:     30 * time.Second,
+    },
+}
+```

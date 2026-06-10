@@ -10,6 +10,61 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestCircuitBreakerInvalidSettings(t *testing.T) {
+	isFailure := func(err error) bool { return err != nil }
+
+	testCases := []struct {
+		name     string
+		settings Settings
+		wantErr  bool
+	}{
+		{
+			name:     "empty settings",
+			settings: Settings{},
+			wantErr:  true,
+		},
+		{
+			name: "nil IsFailure",
+			settings: Settings{
+				IsFailure: nil,
+				Threshold: 3,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero threshold",
+			settings: Settings{
+				IsFailure: isFailure,
+				Threshold: 0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid settings",
+			settings: Settings{
+				IsFailure: isFailure,
+				Threshold: 3,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := NewBreaker[string](tc.settings)
+			if tc.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, b)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.NotNil(t, b)
+			assert.Equal(t, Closed, b.State())
+		})
+	}
+}
+
 func TestCircuitBreaker(t *testing.T) {
 	var circuitSuccessResp = "success"
 	var circuitErrorResp = errors.New("circuit error")

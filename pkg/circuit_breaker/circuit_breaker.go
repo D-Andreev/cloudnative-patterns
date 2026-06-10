@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/go-playground/validator/v10"
 )
 
 var BreakerErrResponse = errors.New("service unavailable")
@@ -32,8 +34,15 @@ func (s State) String() string {
 
 type Circuit[T any] func(context.Context) (T, error)
 
+type IsFailureFunc func(err error) bool
+
+type Settings struct {
+	IsFailure IsFailureFunc `validate:"required"`
+	Threshold int           `validate:"required,min=1"`
+}
+
 type Breaker[T any] struct {
-	isFailure     func(err error) bool
+	isFailure     IsFailureFunc
 	mu            sync.Mutex
 	state         State
 	threshold     int
@@ -42,12 +51,18 @@ type Breaker[T any] struct {
 	probeInFlight bool
 }
 
-func NewBreaker[T any](isFailure func(err error) bool, threshold int) *Breaker[T] {
-	return &Breaker[T]{
-		isFailure: isFailure,
-		state:     Closed,
-		threshold: threshold,
+func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
+	validate := validator.New(validator.WithRequiredStructEnabled())
+	err := validate.Struct(settings)
+	if err != nil {
+		return nil, err
 	}
+
+	return &Breaker[T]{
+		isFailure: settings.IsFailure,
+		state:     Closed,
+		threshold: settings.Threshold,
+	}, nil
 }
 
 func (b *Breaker[T]) State() State {

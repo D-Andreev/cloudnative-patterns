@@ -23,8 +23,10 @@ var isFailure = func(err error) bool {
 
 	return true
 }
-var b = circuitbreaker.NewBreaker[string](isFailure, 3)
-var helloWithBreaker = b.BreakerFn(hello)
+var settings = circuitbreaker.Settings{
+	IsFailure: isFailure,
+	Threshold: 3,
+}
 
 type ReqBody struct {
 	Input string
@@ -51,6 +53,11 @@ func hello(ctx context.Context) (string, error) {
 }
 
 func main() {
+	b, err := circuitbreaker.NewBreaker[string](settings)
+	if err != nil {
+		panic(err)
+	}
+	helloWithBreaker := b.BreakerFn(hello)
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		bytedata, err := io.ReadAll(r.Body)
 		reqBodyString := string(bytedata)

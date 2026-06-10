@@ -83,10 +83,14 @@ func TestCircuitBreaker(t *testing.T) {
 				return "success", nil
 			}
 
-			isFailure := func(err error) bool {
-				return err != nil
+			settings := Settings{
+				IsFailure: func(err error) bool {
+					return err != nil
+				},
+				Threshold: 3,
 			}
-			b := NewBreaker[string](isFailure, tc.threshold)
+			b, err := NewBreaker[string](settings)
+			assert.Equal(t, nil, err, "Invalid settings")
 			c := b.BreakerFn(circuitFn)
 			var results []string
 			var errs []error
@@ -118,7 +122,12 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 		return "", errors.New("circuit error")
 	}
 
-	b := NewBreaker[string](func(err error) bool { return err != nil }, threshold)
+	settings := Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: threshold,
+	}
+	b, err := NewBreaker[string](settings)
+	assert.Equal(t, nil, err, "Invalid settings")
 	c := b.BreakerFn(circuitFn)
 
 	_, _ = c(context.Background())

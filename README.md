@@ -12,7 +12,7 @@ go get github.com/D-Andreev/cloudnative-patterns
 
 > Temporarily block access to a remote service or resource after failures reach a threshold, instead of repeatedly retrying an operation that's likely to fail. This approach handles faults that take varying amounts of time to recover from, lets the failing service recover, and improves the stability and resiliency of an application.
 
-Wrap a function that may fail. After N failures the breaker opens and returns fast without calling the dependency. After a cooldown it probes in half-open state, a success closes the circuit again.
+Wrap a function that may fail. After N failures the breaker opens and returns fast without calling the dependency. After a cooldown it probes in half-open state to see if the service has recovered.
 
 ```go
 package main
@@ -30,10 +30,15 @@ func callDownstream(ctx context.Context) (string, error) {
 }
 
 func main() {
-	isFailure := func(err error) bool { return err != nil }
-	threshold := 3
-
-	b := breaker.NewBreaker[string](isFailure, threshold)
+	settings := breaker.Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: 3,
+	}
+	b, err := breaker.NewBreaker[string](settings)
+	if err != nil {
+		fmt.Println("Invalid settings", err)
+		return
+	}
 	call := b.BreakerFn(callDownstream)
 
 	for i := 1; i <= 5; i++ {
@@ -60,9 +65,9 @@ call 4: circuit open — fast fail (service unavailable), state=open
 call 5: circuit open — fast fail (service unavailable), state=open
 ```
 
-## Development
+### Settings
 
-```bash
-make build      # build e2e demo service
-make test       # unit + e2e tests
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `IsFailure` | `func(error) bool` | Called after each downstream invocation. Return `true` if the error should count toward opening the circuit (e.g. timeouts, 5xx). Return `false` for errors that should not trip the breaker (e.g. client validation errors). Required, must not be nil. |
+| `Threshold` | `int` | Number of consecutive failures (as determined by `IsFailure`) before the circuit opens. Must be at least `1`. |

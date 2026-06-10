@@ -2,7 +2,7 @@ package debounce
 
 import (
 	"context"
-	"sync/atomic"
+	"errors"
 	"testing"
 	"time"
 
@@ -64,35 +64,80 @@ func TestDebounceFnFunctionFirst(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var calls atomic.Int32
+	var calls int
 	call := d.DebounceFirstFn(func(ctx context.Context) (string, error) {
-		calls.Add(1)
+		calls++
 		return "ok", nil
 	})
 
-	call(context.Background())
-	call(context.Background())
-	call(context.Background())
+	res1, err1 := call(context.Background())
+	res2, err2 := call(context.Background())
+	res3, err3 := call(context.Background())
 
-	assert.Equal(t, int32(1), calls.Load())
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.NoError(t, err3)
+	assert.Equal(t, "ok", res1)
+	assert.Equal(t, "ok", res2)
+	assert.Equal(t, "ok", res3)
+	assert.Equal(t, 1, calls)
 }
 
 func TestDebounceFnFunctionLast(t *testing.T) {
 	d, err := NewDebounce[string](Settings{
 		DebounceType: FunctionLast,
-		Duration:     1 * time.Second,
+		Duration:     50 * time.Millisecond,
 	})
 	require.NoError(t, err)
 
 	var calls int
-	call := d.DebounceLasttFn(func(ctx context.Context) (string, error) {
+	call := d.DebounceLastFn(func(ctx context.Context) (string, error) {
 		calls++
 		return "ok", nil
 	})
 
-	call(context.Background())
-	call(context.Background())
-	call(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = call(context.Background())
+	}()
 
+	time.Sleep(10 * time.Millisecond)
+	go func() { _, _ = call(context.Background()) }()
+	time.Sleep(10 * time.Millisecond)
+
+	res, err := call(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "ok", res)
 	assert.Equal(t, 1, calls)
+
+	<-done
+}
+
+func TestDebounceLastFnCancelsSupersededCall(t *testing.T) {
+	d, err := NewDebounce[string](Settings{
+		DebounceType: FunctionLast,
+		Duration:     200 * time.Millisecond,
+	})
+	require.NoError(t, err)
+
+	call := d.DebounceLastFn(func(ctx context.Context) (string, error) {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			return "ok", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+
+	go func() {
+		_, err := call(context.Background())
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, context.Canceled))
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	res, err := call(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "ok", res)
 }

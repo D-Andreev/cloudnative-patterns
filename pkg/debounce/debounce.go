@@ -4,6 +4,7 @@ package debounce
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,18 +17,18 @@ const defaultDuration = 300 * time.Millisecond
 type DebounceType int
 
 const (
-	// Inner function is called and subsequent requests are ignored for duration D
+	// FunctionFirst runs the inner function on the first call; subsequent calls within
+	// Duration return the cached result from that first execution.
 	FunctionFirst DebounceType = iota
-	// Function last will wait for duration D after series of calls to call the inner function
+	// FunctionLast waits Duration after the last call before running the inner function.
 	FunctionLast
 )
 
 // Settings for the Debounce
 type Settings struct {
-	// Duration to wait before making the actual calls. If not passed default is 1s.
-	// This applies only when DebouncyType is FunctionLast
-	Duration time.Duration `validate:"min=1ms"`
-	// Debounce type, first or last
+	// Duration is the debounce window. Defaults to 300ms when unset.
+	Duration time.Duration
+	// DebounceType selects first or last debounce behavior.
 	DebounceType DebounceType `validate:"min=0,max=1"`
 }
 
@@ -36,30 +37,35 @@ type Circuit[T any] func(context.Context) (T, error)
 
 // Debounce limits call frequency of a function
 type Debounce[T any] struct {
-	mu                sync.Mutex
-	duration          time.Duration
-	debounceType      DebounceType
-	threshold         time.Time
-	fnFirstLastCtx    context.Context
-	fnFirstLastCancel context.CancelFunc
-	timer             *time.Timer
-	fnLastCtx         context.Context
-	fnLastCancel      context.CancelFunc
+	mu       sync.Mutex
+	duration time.Duration
+
+	threshold     time.Time
+	cachedResult  T
+	cachedErr     error
+	firstInFlight bool
+	firstDone     chan struct{}
+
+	timer      *time.Timer
+	lastCancel context.CancelFunc
 }
 
 // NewDebounce validates settings and returns a Debounce
 func NewDebounce[T any](settings Settings) (*Debounce[T], error) {
+	settings = normalizeSettings(settings)
+
+	if settings.Duration < time.Millisecond {
+		return nil, fmt.Errorf("duration must be at least 1ms")
+	}
+
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(settings)
 	if err != nil {
 		return nil, err
 	}
 
-	settings = normalizeSettings(settings)
-
 	return &Debounce[T]{
-		duration:     settings.Duration,
-		debounceType: settings.DebounceType,
+		duration: settings.Duration,
 	}, nil
 }
 
@@ -70,65 +76,92 @@ func normalizeSettings(s Settings) Settings {
 	return s
 }
 
-// DebounceFirstFn wraps circuit and returns a function that debounces function first style.
-// Call DebounceFirstFn once and reuse the returned Circuit; do not call DebounceFirstFn on every request.
+// DebounceFirstFn wraps circuit and returns a function that debounces function-first style.
+// The first call in a window runs circuit; later calls within Duration return the same result.
+// Call DebounceFirstFn once and reuse the returned Circuit.
 func (deb *Debounce[T]) DebounceFirstFn(circuit Circuit[T]) Circuit[T] {
 	return func(ctx context.Context) (T, error) {
 		deb.mu.Lock()
-
 		if time.Now().Before(deb.threshold) {
-			deb.fnFirstLastCancel()
+			if deb.firstInFlight {
+				done := deb.firstDone
+				deb.mu.Unlock()
+				<-done
+				deb.mu.Lock()
+				result, err := deb.cachedResult, deb.cachedErr
+				deb.mu.Unlock()
+				return result, err
+			}
+			result, err := deb.cachedResult, deb.cachedErr
 			deb.mu.Unlock()
-			var zeroT T
-			return zeroT, nil
+			return result, err
 		}
 
-		deb.fnFirstLastCtx, deb.fnFirstLastCancel = context.WithCancel(ctx)
+		deb.firstInFlight = true
+		deb.firstDone = make(chan struct{})
 		deb.threshold = time.Now().Add(deb.duration)
-
 		deb.mu.Unlock()
 
-		result, err := circuit(deb.fnFirstLastCtx)
+		runCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		result, err := circuit(runCtx)
+
+		deb.mu.Lock()
+		deb.cachedResult = result
+		deb.cachedErr = err
+		deb.firstInFlight = false
+		close(deb.firstDone)
+		deb.mu.Unlock()
+
 		return result, err
 	}
 }
 
-// DebounceLasttFn wraps circuit and returns a function that debounces function last style.
-// Call DebounceLasttFn once and reuse the returned Circuit; do not call DebounceLasttFn on every request.
-func (deb *Debounce[T]) DebounceLasttFn(circuit Circuit[T]) Circuit[T] {
+// DebounceLastFn wraps circuit and returns a function that debounces function-last style.
+// Each call resets the timer; circuit runs once after Duration passes with no new calls.
+// Superseded callers receive ctx.Err() when a newer call replaces them.
+// Call DebounceLastFn once and reuse the returned Circuit.
+func (deb *Debounce[T]) DebounceLastFn(circuit Circuit[T]) Circuit[T] {
 	return func(ctx context.Context) (T, error) {
 		deb.mu.Lock()
 
+		if deb.lastCancel != nil {
+			deb.lastCancel()
+		}
 		if deb.timer != nil {
 			deb.timer.Stop()
-			deb.fnLastCancel()
-			deb.mu.Unlock()
-			var zeroT T
-			return zeroT, nil
 		}
 
-		deb.fnLastCtx, deb.fnLastCancel = context.WithCancel(ctx)
-		ch := make(chan struct {
+		runCtx, cancel := context.WithCancel(ctx)
+		deb.lastCancel = cancel
+
+		resCh := make(chan struct {
 			result T
 			err    error
 		}, 1)
 
 		deb.timer = time.AfterFunc(deb.duration, func() {
-			r, e := circuit(ctx)
-			ch <- struct {
+			result, err := circuit(runCtx)
+			resCh <- struct {
 				result T
 				err    error
-			}{r, e}
+			}{result, err}
+
+			deb.mu.Lock()
+			deb.timer = nil
+			deb.lastCancel = nil
+			deb.mu.Unlock()
 		})
 
 		deb.mu.Unlock()
 
 		select {
-		case res := <-ch:
+		case res := <-resCh:
 			return res.result, res.err
-		case <-deb.fnLastCtx.Done():
-			var zeroT T
-			return zeroT, deb.fnLastCtx.Err()
+		case <-runCtx.Done():
+			var zero T
+			return zero, runCtx.Err()
 		}
 	}
 }

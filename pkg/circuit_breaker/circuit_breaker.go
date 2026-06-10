@@ -191,8 +191,7 @@ func (b *Breaker[T]) tryAcquireProbe() bool {
 }
 
 // BreakerFn wraps circuit and returns a function that enforces breaker semantics.
-// Call BreakerFn once and reuse the returned Circuit; do not call BreakerFn on
-// every request.
+// Call BreakerFn once and reuse the returned Circuit; do not call BreakerFn on every request.
 func (b *Breaker[T]) BreakerFn(circuit Circuit[T]) Circuit[T] {
 	return func(ctx context.Context) (T, error) {
 		b.mu.Lock()

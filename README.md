@@ -13,7 +13,7 @@ Implementations of various cloud native patterns with Go.
 ## Implemented patterns
 
 - [x] [Circuit breaker](#circuit-breaker)
-- [ ] [Debounce](#debounce)
+- [x] [Debounce](#debounce)
 - [ ] [Throttle](#throttle)
 - [ ] [Timeout](#timeout)
 
@@ -23,7 +23,7 @@ Implementations of various cloud native patterns with Go.
 go get github.com/D-Andreev/cloudnative-patterns
 ```
 
-## [Circuit breaker](https://www.geeksforgeeks.org/system-design/what-is-circuit-breaker-pattern-in-microservices/)
+## Circuit breaker
 
 > Temporarily block access to a remote service or resource after failures reach a threshold, instead of repeatedly retrying an operation that's likely to fail. This approach handles faults that take varying amounts of time to recover from, lets the failing service recover, and improves the stability and resiliency of an application.
 
@@ -127,7 +127,143 @@ settings := breaker.Settings{
 
 ## Debounce
 
-Coming soon.
+> Coalesce a burst of calls into a single execution. Within a configurable window, either the **first** call runs and later callers share its result, or each new call resets the timer and only the **last** call in a quiet period runs.
+
+### Modes
+
+| Mode | Constant | Behavior |
+|------|----------|----------|
+| **Function first** | `FunctionFirst` | The first call in a window runs the inner function; subsequent calls within `Duration` return the cached result (or wait if the first call is still in flight). |
+| **Function last** | `FunctionLast` | Each call resets a timer. The inner function runs once after `Duration` passes with no new calls. Superseded callers receive `context.Canceled`. |
+
+### Usage
+
+#### Function first
+
+Use when the first event in a burst should win (e.g. submit on first click, share one in-flight result with concurrent waiters).
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	debounce "github.com/D-Andreev/cloudnative-patterns/pkg/debounce"
+)
+
+func fetch(ctx context.Context) (string, error) {
+	return "ok", nil
+}
+
+func main() {
+	d, err := debounce.NewDebounce[string](debounce.Settings{
+		DebounceType: debounce.FunctionFirst,
+		Duration:     1 * time.Second,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	call := d.DebounceFirstFn(fetch)
+
+	res1, _ := call(context.Background()) // runs fetch
+	res2, _ := call(context.Background()) // cached
+	res3, _ := call(context.Background()) // cached
+
+	fmt.Println(res1, res2, res3) // ok ok ok
+}
+```
+
+#### Function last
+
+Use when only the **latest input** matters (e.g. search-as-you-type). Each `call()` resets a timer; the inner function runs **once** after `Duration` passes with no new calls. Earlier waiters get `context.Canceled`.
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	debounce "github.com/D-Andreev/cloudnative-patterns/pkg/debounce"
+)
+
+func search(ctx context.Context, query string) (string, error) {
+	select {
+	case <-time.After(50 * time.Millisecond):
+		return "results for " + query, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func main() {
+	d, err := debounce.NewDebounce[string](debounce.Settings{
+		DebounceType: debounce.FunctionLast,
+		Duration:     200 * time.Millisecond,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	var query string
+	call := d.DebounceLastFn(func(ctx context.Context) (string, error) {
+		return search(ctx, query) // reads the value set by the latest caller
+	})
+
+	// Rapid keystrokes — each call resets the 200ms quiet-period timer.
+	query = "a"
+	go func() {
+		_, err := call(context.Background())
+		if errors.Is(err, context.Canceled) {
+			fmt.Println("a: superseded")
+		}
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	query = "ab"
+	go func() {
+		_, err := call(context.Background())
+		if errors.Is(err, context.Canceled) {
+			fmt.Println("ab: superseded")
+		}
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	query = "abc"
+	res, err := call(context.Background()) // waits 200ms quiet, then runs search once
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Println(res)
+}
+```
+
+Each `call()` **blocks** until it wins (timer fired + inner fn done) or is superseded. The winning caller waits roughly **`Duration` + inner work time** (~250ms here), not the 20ms gaps between keystrokes.
+
+**Output**
+
+```sh
+a: superseded
+ab: superseded
+results for abc
+```
+
+Only one `search` runs, with the **last** query (`"abc"`). Superseded callers should respect `ctx` in long-running work.
+
+### Settings
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Duration` | `time.Duration` | Debounce window. Defaults to `300ms` when unset or zero. Must be at least `1ms`. |
+| `DebounceType` | `DebounceType` | `FunctionFirst` (0) or `FunctionLast` (1). Required. |
 
 ## Throttle
 

@@ -33,7 +33,7 @@ func startService(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		log.Fatal("Failed to compile service: ", err.Error())
 	}
-	cmd = exec.Command("./cb_service")
+	cmd = exec.Command("./cb_service/main")
 
 	if err := cmd.Start(); err != nil {
 		log.Fatal("ERR ", err)

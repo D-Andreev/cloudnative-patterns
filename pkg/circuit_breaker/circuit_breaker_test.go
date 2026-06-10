@@ -47,6 +47,43 @@ func TestCircuitBreakerInvalidSettings(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "invalid open backoff strategy",
+			settings: Settings{
+				IsFailure: isFailure,
+				Threshold: 3,
+				OpenBackoff: OpenBackoff{
+					Strategy: OpenStrategy(99),
+					Base:     time.Second,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "open backoff max less than base",
+			settings: Settings{
+				IsFailure: isFailure,
+				Threshold: 3,
+				OpenBackoff: OpenBackoff{
+					Strategy: OpenExponential,
+					Base:     5 * time.Second,
+					Max:      time.Second,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid open backoff settings",
+			settings: Settings{
+				IsFailure: isFailure,
+				Threshold: 3,
+				OpenBackoff: OpenBackoff{
+					Strategy: OpenFixed,
+					Base:     10 * time.Second,
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -142,7 +179,7 @@ func TestCircuitBreaker(t *testing.T) {
 				IsFailure: func(err error) bool {
 					return err != nil
 				},
-				Threshold: 3,
+				Threshold: tc.threshold,
 			}
 			b, err := NewBreaker[string](settings)
 			assert.Equal(t, nil, err, "Invalid settings")
@@ -207,4 +244,107 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 		assert.Error(t, err)
 	}
 	assert.Equal(t, Open, b.State())
+}
+
+func TestOpenBackoffDuration(t *testing.T) {
+	testCases := []struct {
+		name     string
+		backoff  OpenBackoff
+		d        int
+		expected time.Duration
+	}{
+		{
+			name:     "default exponential d=0",
+			backoff:  OpenBackoff{Strategy: OpenExponential, Base: 2 * time.Second},
+			d:        0,
+			expected: 2 * time.Second,
+		},
+		{
+			name:     "default exponential d=2",
+			backoff:  OpenBackoff{Strategy: OpenExponential, Base: 2 * time.Second},
+			d:        2,
+			expected: 8 * time.Second,
+		},
+		{
+			name:     "exponential capped by max",
+			backoff:  OpenBackoff{Strategy: OpenExponential, Base: 2 * time.Second, Max: 5 * time.Second},
+			d:        3,
+			expected: 5 * time.Second,
+		},
+		{
+			name:     "fixed",
+			backoff:  OpenBackoff{Strategy: OpenFixed, Base: 10 * time.Second},
+			d:        5,
+			expected: 10 * time.Second,
+		},
+		{
+			name:     "linear d=0",
+			backoff:  OpenBackoff{Strategy: OpenLinear, Base: 2 * time.Second},
+			d:        0,
+			expected: 2 * time.Second,
+		},
+		{
+			name:     "linear d=2",
+			backoff:  OpenBackoff{Strategy: OpenLinear, Base: 2 * time.Second},
+			d:        2,
+			expected: 6 * time.Second,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, tc.backoff.Duration(tc.d))
+		})
+	}
+}
+
+func TestNewBreakerDefaultOpenBackoff(t *testing.T) {
+	b, err := NewBreaker[string](Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: 1,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, OpenExponential, b.openBackoff.Strategy)
+	assert.Equal(t, defaultOpenBase, b.openBackoff.Base)
+	assert.Equal(t, time.Duration(0), b.openBackoff.Max)
+	assert.Equal(t, 2*time.Second, b.openBackoff.Duration(0))
+	assert.Equal(t, 4*time.Second, b.openBackoff.Duration(1))
+}
+
+func TestOpenFixedBackoffBlocksUntilBaseElapsed(t *testing.T) {
+	settings := Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: 1,
+		OpenBackoff: OpenBackoff{
+			Strategy: OpenFixed,
+			Base:     4 * time.Second,
+		},
+	}
+	b, err := NewBreaker[string](settings)
+	assert.NoError(t, err)
+
+	call := b.BreakerFn(func(ctx context.Context) (string, error) {
+		return "", errors.New("fail")
+	})
+
+	_, err = call(context.Background())
+	assert.Error(t, err)
+	assert.Equal(t, Open, b.State())
+
+	_, err = call(context.Background())
+	assert.True(t, errors.Is(err, BreakerErrResponse))
+
+	time.Sleep(2 * time.Second)
+	_, err = call(context.Background())
+	assert.True(t, errors.Is(err, BreakerErrResponse))
+
+	time.Sleep(3 * time.Second)
+	_, err = call(context.Background())
+	assert.Error(t, err)
+	assert.False(t, errors.Is(err, BreakerErrResponse))
+
+	time.Sleep(4 * time.Second)
+	_, err = call(context.Background())
+	assert.NotNil(t, err)
+	assert.Equal(t, "fail", err.Error())
 }

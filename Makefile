@@ -2,7 +2,8 @@
 
 GO ?= go
 BIN_DIR := bin
-E2E_SERVICE := $(BIN_DIR)/e2e-service
+E2E_CB_SERVICE := $(BIN_DIR)/e2e-cb-service
+E2E_DEBOUNCE_SERVICE := $(BIN_DIR)/e2e-debounce-service
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 PKG := ./pkg/...
@@ -20,7 +21,8 @@ help:
 
 build:
 	@mkdir -p $(BIN_DIR)
-	$(GO) build -o $(E2E_SERVICE) ./e2e/service/main.go
+	$(GO) build -o $(E2E_CB_SERVICE) ./e2e/cb_service/main.go
+	$(GO) build -o $(E2E_DEBOUNCE_SERVICE) ./e2e/debounce_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)

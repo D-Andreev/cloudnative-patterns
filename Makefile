@@ -20,7 +20,7 @@ help:
 
 build:
 	@mkdir -p $(BIN_DIR)
-	$(GO) build -o $(E2E_SERVICE) ./e2e/service/main.go
+	$(GO) build -o $(E2E_SERVICE) ./e2e/cb_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)

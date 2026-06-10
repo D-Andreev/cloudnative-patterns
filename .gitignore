@@ -32,5 +32,5 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# e2e service bin
-e2e/service/main
+# e2e cb_service bin
+e2e/cb_service/main

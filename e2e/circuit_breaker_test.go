@@ -29,11 +29,11 @@ func startService(t *testing.T) {
 		return
 	}
 
-	cmd := exec.Command("go", "build", "-o", "service", "./service/main.go")
+	cmd := exec.Command("go", "build", "-o", "service", "./cb_service/main.go")
 	if err := cmd.Run(); err != nil {
 		log.Fatal("Failed to compile service: ", err.Error())
 	}
-	cmd = exec.Command("./service/main")
+	cmd = exec.Command("./cb_service/main")
 
 	if err := cmd.Start(); err != nil {
 		log.Fatal("ERR ", err)

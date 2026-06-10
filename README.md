@@ -10,6 +10,13 @@
 
 Implementations of various cloud native patterns with Go.
 
+## Implemented patterns
+
+- [x] [Circuit breaker](#circuit-breaker)
+- [ ] [Debounce](#debounce)
+- [ ] [Throttle](#throttle)
+- [ ] [Timeout](#timeout)
+
 ## Install
 
 ```bash
@@ -117,3 +124,15 @@ settings := breaker.Settings{
     },
 }
 ```
+
+## Debounce
+
+Coming soon.
+
+## Throttle
+
+Coming soon.
+
+## Timeout
+
+Coming soon.

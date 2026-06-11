@@ -305,7 +305,7 @@ func TestNewBreakerDefaultOpenBackoff(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, OpenExponential, b.openBackoff.Strategy)
-	assert.Equal(t, defaultOpenBase, b.openBackoff.Base)
+	assert.Equal(t, DefaultOpenBase, b.openBackoff.Base)
 	assert.Equal(t, time.Duration(0), b.openBackoff.Max)
 	assert.Equal(t, 2*time.Second, b.openBackoff.Duration(0))
 	assert.Equal(t, 4*time.Second, b.openBackoff.Duration(1))

@@ -35,3 +35,4 @@ Thumbs.db
 # e2e service binaries (built by tests)
 /e2e/cb-service
 /e2e/debounce-service
+/e2e/retry-service

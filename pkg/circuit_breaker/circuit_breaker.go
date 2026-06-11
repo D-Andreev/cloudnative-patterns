@@ -12,35 +12,7 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// BreakerErrResponse is returned when the circuit is open or a half-open probe
-// slot is unavailable. Use errors.Is to detect it.
-var BreakerErrResponse = errors.New("service unavailable")
-
-// State represents the current phase of the circuit breaker.
-type State int
-
-const (
-	// Closed allows all requests through to the wrapped circuit.
-	Closed State = iota
-	// Open rejects requests until the retry cooldown elapses.
-	Open
-	// HalfOpen allows a single probe request to test recovery.
-	HalfOpen
-)
-
-// String returns a lowercase name for the state.
-func (s State) String() string {
-	switch s {
-	case Closed:
-		return "closed"
-	case Open:
-		return "open"
-	case HalfOpen:
-		return "half-open"
-	default:
-		return "unknown"
-	}
-}
+const DefaultOpenBase = 2 * time.Second
 
 // OpenStrategy selects how long the circuit stays open before half-open.
 type OpenStrategy int
@@ -86,6 +58,52 @@ func (ob OpenBackoff) Duration(failuresPastThreshold int) time.Duration {
 	return delay
 }
 
+func NormalizeOpenBackoff(ob OpenBackoff) (OpenBackoff, error) {
+	if ob.Strategy < OpenExponential || ob.Strategy > OpenLinear {
+		return OpenBackoff{}, fmt.Errorf("invalid open backoff strategy: %d", ob.Strategy)
+	}
+
+	if ob.Base <= 0 {
+		ob.Base = DefaultOpenBase
+	}
+
+	if ob.Max > 0 && ob.Max < ob.Base {
+		return OpenBackoff{}, errors.New("open backoff max must be greater than or equal to base")
+	}
+
+	return ob, nil
+}
+
+// BreakerErrResponse is returned when the circuit is open or a half-open probe
+// slot is unavailable. Use errors.Is to detect it.
+var BreakerErrResponse = errors.New("service unavailable")
+
+// State represents the current phase of the circuit breaker.
+type State int
+
+const (
+	// Closed allows all requests through to the wrapped circuit.
+	Closed State = iota
+	// Open rejects requests until the retry cooldown elapses.
+	Open
+	// HalfOpen allows a single probe request to test recovery.
+	HalfOpen
+)
+
+// String returns a lowercase name for the state.
+func (s State) String() string {
+	switch s {
+	case Closed:
+		return "closed"
+	case Open:
+		return "open"
+	case HalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
+}
+
 // Circuit is a function that may fail and is protected by the breaker.
 type Circuit[T any] func(context.Context) (T, error)
 
@@ -118,8 +136,6 @@ type Breaker[T any] struct {
 	probeInFlight bool
 }
 
-const defaultOpenBase = 2 * time.Second
-
 // NewBreaker validates settings and returns a breaker in the closed state.
 func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
@@ -128,7 +144,7 @@ func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 		return nil, err
 	}
 
-	openBackoff, err := normalizeOpenBackoff(settings.OpenBackoff)
+	openBackoff, err := NormalizeOpenBackoff(settings.OpenBackoff)
 	if err != nil {
 		return nil, err
 	}
@@ -139,22 +155,6 @@ func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 		state:       Closed,
 		threshold:   settings.Threshold,
 	}, nil
-}
-
-func normalizeOpenBackoff(ob OpenBackoff) (OpenBackoff, error) {
-	if ob.Strategy < OpenExponential || ob.Strategy > OpenLinear {
-		return OpenBackoff{}, fmt.Errorf("invalid open backoff strategy: %d", ob.Strategy)
-	}
-
-	if ob.Base <= 0 {
-		ob.Base = defaultOpenBase
-	}
-
-	if ob.Max > 0 && ob.Max < ob.Base {
-		return OpenBackoff{}, errors.New("open backoff max must be greater than or equal to base")
-	}
-
-	return ob, nil
 }
 
 // State returns the current breaker state.

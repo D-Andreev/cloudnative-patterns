@@ -14,6 +14,7 @@ Implementations of various cloud native patterns with Go.
 
 - [x] [Circuit breaker](#circuit-breaker)
 - [x] [Debounce](#debounce)
+- [x] [Retry](#retry)
 - [ ] [Throttle](#throttle)
 - [ ] [Timeout](#timeout)
 
@@ -264,6 +265,67 @@ Only one `search` runs, with the **last** query (`"abc"`). Superseded callers sh
 |-------|------|-------------|
 | `Duration` | `time.Duration` | Debounce window. Defaults to `300ms` when unset or zero. Must be at least `1ms`. |
 | `DebounceType` | `DebounceType` | `FunctionFirst` (0) or `FunctionLast` (1). Required. |
+
+## Retry
+
+> Re-invoke a failing operation after a delay. Useful for transient errors (network blips, rate limits) without hammering a dependency. Stops on success, when `MaxFailures` retries are exhausted, or when the context is canceled during a wait.
+
+### Usage
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	retry "github.com/D-Andreev/cloudnative-patterns/pkg/retry"
+)
+
+func main() {
+	r, err := retry.NewRetry[string](retry.Settings{
+		Delay:       100 * time.Millisecond,
+		MaxFailures: 3,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	attempts := 0
+	call := r.RetryFn(func(context.Context) (string, error) {
+		attempts++
+		if attempts < 3 {
+			return "", errors.New("temporary")
+		}
+		return "ok", nil
+	})
+
+	res, err := call(context.Background())
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Printf("%s after %d attempts\n", res, attempts)
+}
+```
+
+**Output**
+
+```sh
+ok after 3 attempts
+```
+
+The first two failures wait `Delay` and retry. On success the loop returns immediately — it does not use all `MaxFailures` slots. With persistent failure, `MaxFailures: 3` allows up to **four** invocations (initial attempt plus three retries).
+
+### Settings
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Delay` | `time.Duration` | Wait between retry attempts after a failed invocation. |
+| `MaxFailures` | `int` | Maximum retries after the first failed attempt. `0` means no retries. |
 
 ## Throttle
 

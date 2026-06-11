@@ -4,6 +4,7 @@ GO ?= go
 BIN_DIR := bin
 E2E_CB_SERVICE := $(BIN_DIR)/e2e-cb-service
 E2E_DEBOUNCE_SERVICE := $(BIN_DIR)/e2e-debounce-service
+E2E_RETRY_SERVICE := $(BIN_DIR)/e2e-retry-service
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 PKG := ./pkg/...
@@ -23,6 +24,7 @@ build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(E2E_CB_SERVICE) ./e2e/cb_service/main.go
 	$(GO) build -o $(E2E_DEBOUNCE_SERVICE) ./e2e/debounce_service/main.go
+	$(GO) build -o $(E2E_RETRY_SERVICE) ./e2e/retry_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)

@@ -4,7 +4,6 @@ package debounce
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -27,7 +26,7 @@ const (
 // Settings for the Debounce
 type Settings struct {
 	// Duration is the debounce window. Defaults to 300ms when unset.
-	Duration time.Duration
+	Duration time.Duration `validate:"min=1ms"`
 	// DebounceType selects first or last debounce behavior.
 	DebounceType DebounceType `validate:"min=0,max=1"`
 }
@@ -52,17 +51,13 @@ type Debounce[T any] struct {
 
 // NewDebounce validates settings and returns a Debounce
 func NewDebounce[T any](settings Settings) (*Debounce[T], error) {
-	settings = normalizeSettings(settings)
-
-	if settings.Duration < time.Millisecond {
-		return nil, fmt.Errorf("duration must be at least 1ms")
-	}
-
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(settings)
 	if err != nil {
 		return nil, err
 	}
+
+	settings = normalizeSettings(settings)
 
 	return &Debounce[T]{
 		duration: settings.Duration,

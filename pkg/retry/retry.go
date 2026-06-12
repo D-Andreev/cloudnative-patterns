@@ -26,7 +26,7 @@ type Retry[T any] struct {
 	maxFailures int
 }
 
-// NewRetry validates settings and returns a Retry.
+// NewRetry returns a Retry.
 func NewRetry[T any](settings Settings) (*Retry[T], error) {
 	return &Retry[T]{
 		delay:       settings.Delay,

@@ -36,3 +36,4 @@ Thumbs.db
 /e2e/cb-service
 /e2e/debounce-service
 /e2e/retry-service
+/e2e/throttle-service

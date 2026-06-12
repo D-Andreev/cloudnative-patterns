@@ -15,7 +15,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Circuit breaker](#circuit-breaker)
 - [x] [Debounce](#debounce)
 - [x] [Retry](#retry)
-- [ ] [Throttle](#throttle)
+- [x] [Throttle](#throttle)
 - [ ] [Timeout](#timeout)
 
 ## Install
@@ -329,7 +329,183 @@ The first two failures wait `Delay` and retry. On success the loop returns immed
 
 ## Throttle
 
-Coming soon.
+> Limit how often an effector runs using a token bucket. You get up to `Maximum` calls per window; tokens refill by `Refill` every `Duration`. When no token is available, behavior depends on which wrapper you choose.
+
+### Modes
+
+| Mode | Method | When throttled |
+|------|--------|----------------|
+| **Error** | `ThrottleFnWithError` | Returns `too many calls` and does not run the effector. |
+| **Replay** | `ThrottleFnWithReplay` | Returns the last successful result without running the effector. |
+| **Queue** | `ThrottleFnWithQueue` | Enqueues the request and returns `too many calls`; a later caller with a token processes queued requests (FIFO). |
+
+### Usage
+
+#### With error
+
+Use when callers should handle rate limiting explicitly (for example return HTTP 429).
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	throttle "github.com/D-Andreev/cloudnative-patterns/pkg/throttle"
+)
+
+func main() {
+	th, err := throttle.NewThrottle[string](throttle.Settings{
+		Maximum:  2,
+		Duration: time.Second,
+		Refill:   2,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	call := th.ThrottleFnWithError(func(context.Context) (string, error) {
+		return "ok", nil
+	})
+
+	for i := 1; i <= 3; i++ {
+		res, err := call(context.Background())
+		if err != nil {
+			fmt.Printf("call %d: throttled (%v)\n", i, err)
+			continue
+		}
+		fmt.Printf("call %d: %s\n", i, res)
+	}
+}
+```
+
+**Output**
+
+```sh
+call 1: ok
+call 2: ok
+call 3: throttled (too many calls)
+```
+
+#### With replay
+
+Use when stale data is acceptable.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	throttle "github.com/D-Andreev/cloudnative-patterns/pkg/throttle"
+)
+
+func main() {
+	th, err := throttle.NewThrottle[string](throttle.Settings{
+		Maximum:  1,
+		Duration: time.Second,
+		Refill:   1,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	attempts := 0
+	call := th.ThrottleFnWithReplay(func(context.Context) (string, error) {
+		attempts++
+		return fmt.Sprintf("value-%d", attempts), nil
+	})
+
+	res1, _ := call(context.Background())
+	res2, _ := call(context.Background())
+
+	fmt.Println(res1)
+	fmt.Println(res2)
+	fmt.Println("effector calls:", attempts)
+}
+```
+
+**Output**
+
+```sh
+value-1
+value-1
+effector calls: 1
+```
+
+#### With queue
+
+Use when throttled requests should eventually run, but callers must tolerate an immediate `too many calls` response.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	throttle "github.com/D-Andreev/cloudnative-patterns/pkg/throttle"
+)
+
+type labelKey struct{}
+
+func main() {
+	th, err := throttle.NewThrottle[string](throttle.Settings{
+		Maximum:  1,
+		Duration: 100 * time.Millisecond,
+		Refill:   1,
+	})
+	if err != nil {
+		fmt.Println("invalid settings:", err)
+		return
+	}
+
+	call := th.ThrottleFnWithQueue(func(ctx context.Context) (string, error) {
+		label, _ := ctx.Value(labelKey{}).(string)
+		return label, nil
+	})
+
+	ctxFirst := context.WithValue(context.Background(), labelKey{}, "first")
+	ctxQueued := context.WithValue(context.Background(), labelKey{}, "queued")
+	ctxCaller := context.WithValue(context.Background(), labelKey{}, "caller")
+
+	res, err := call(ctxFirst)
+	fmt.Println("first:", res, "err:", err)
+
+	_, err = call(ctxQueued)
+	fmt.Println("queued:", err)
+
+	time.Sleep(150 * time.Millisecond)
+
+	res, err = call(ctxCaller)
+	fmt.Println("after refill:", res, "err:", err)
+}
+```
+
+**Output**
+
+```sh
+first: first err: <nil>
+queued: too many calls
+after refill: queued err: <nil>
+```
+
+The `"queued"` request was stored when throttled and executed when a later caller had a token.
+
+### Settings
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Maximum` | `uint` | Bucket capacity and initial token count. Must be at least `1`. |
+| `Duration` | `time.Duration` | Refill interval. Must be at least `1ms`. |
+| `Refill` | `uint` | Tokens added every `Duration`, capped at `Maximum`. Must be at least `1`. |
 
 ## Timeout
 

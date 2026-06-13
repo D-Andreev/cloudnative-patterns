@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewRetry(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,
 		MaxFailures: 3,
 	})
@@ -20,33 +20,33 @@ func TestNewRetry(t *testing.T) {
 }
 
 func TestRetryFnSuccessOnFirstAttempt(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,
 		MaxFailures: 3,
 	})
 	require.NoError(t, err)
 
 	var calls int
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
 
-	res, err := call(context.Background())
+	res, err := call(context.Background(), struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, "ok", res)
 	assert.Equal(t, 1, calls)
 }
 
 func TestRetryFnSuccessAfterRetries(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,
 		MaxFailures: 3,
 	})
 	require.NoError(t, err)
 
 	var calls int
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, struct{}) (string, error) {
 		calls++
 		if calls < 3 {
 			return "", errors.New("temporary")
@@ -55,7 +55,7 @@ func TestRetryFnSuccessAfterRetries(t *testing.T) {
 	})
 
 	start := time.Now()
-	res, err := call(context.Background())
+	res, err := call(context.Background(), struct{}{})
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestRetryFnSuccessAfterRetries(t *testing.T) {
 }
 
 func TestRetryFnExhaustsRetries(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,
 		MaxFailures: 2,
 	})
@@ -73,12 +73,12 @@ func TestRetryFnExhaustsRetries(t *testing.T) {
 
 	wantErr := errors.New("permanent")
 	var calls int
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "", wantErr
 	})
 
-	res, err := call(context.Background())
+	res, err := call(context.Background(), struct{}{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, wantErr)
 	assert.Empty(t, res)
@@ -86,7 +86,7 @@ func TestRetryFnExhaustsRetries(t *testing.T) {
 }
 
 func TestRetryFnNoRetriesWhenMaxFailuresZero(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,
 		MaxFailures: 0,
 	})
@@ -94,19 +94,19 @@ func TestRetryFnNoRetriesWhenMaxFailuresZero(t *testing.T) {
 
 	wantErr := errors.New("fail")
 	var calls int
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "", wantErr
 	})
 
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, wantErr)
 	assert.Equal(t, 1, calls)
 }
 
 func TestRetryFnContextCanceledDuringDelay(t *testing.T) {
-	r, err := NewRetry[string](Settings{
+	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       200 * time.Millisecond,
 		MaxFailures: 3,
 	})
@@ -116,7 +116,7 @@ func TestRetryFnContextCanceledDuringDelay(t *testing.T) {
 	defer cancel()
 
 	var calls int
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "", errors.New("temporary")
 	})
@@ -126,7 +126,7 @@ func TestRetryFnContextCanceledDuringDelay(t *testing.T) {
 	var callErr error
 	go func() {
 		defer close(done)
-		res, callErr = call(ctx)
+		res, callErr = call(ctx, struct{}{})
 	}()
 
 	require.Eventually(t, func() bool {

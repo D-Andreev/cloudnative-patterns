@@ -157,12 +157,14 @@ import (
 	debounce "github.com/D-Andreev/cloudnative-patterns/pkg/debounce"
 )
 
-func fetch(ctx context.Context) (string, error) {
+type FetchRequest struct{}
+
+func fetch(ctx context.Context, _ FetchRequest) (string, error) {
 	return "ok", nil
 }
 
 func main() {
-	d, err := debounce.NewDebounce[string](debounce.Settings{
+	d, err := debounce.NewDebounce[FetchRequest, string](debounce.Settings{
 		DebounceType: debounce.FunctionFirst,
 		Duration:     1 * time.Second,
 	})
@@ -173,9 +175,9 @@ func main() {
 
 	call := d.DebounceFirstFn(fetch)
 
-	res1, _ := call(context.Background()) // runs fetch
-	res2, _ := call(context.Background()) // cached
-	res3, _ := call(context.Background()) // cached
+	res1, _ := call(context.Background(), FetchRequest{}) // runs fetch
+	res2, _ := call(context.Background(), FetchRequest{}) // cached
+	res3, _ := call(context.Background(), FetchRequest{}) // cached
 
 	fmt.Println(res1, res2, res3) // ok ok ok
 }
@@ -197,17 +199,21 @@ import (
 	debounce "github.com/D-Andreev/cloudnative-patterns/pkg/debounce"
 )
 
-func search(ctx context.Context, query string) (string, error) {
+type SearchRequest struct {
+	Query string
+}
+
+func search(ctx context.Context, req SearchRequest) (string, error) {
 	select {
 	case <-time.After(50 * time.Millisecond):
-		return "results for " + query, nil
+		return "results for " + req.Query, nil
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
 }
 
 func main() {
-	d, err := debounce.NewDebounce[string](debounce.Settings{
+	d, err := debounce.NewDebounce[SearchRequest, string](debounce.Settings{
 		DebounceType: debounce.FunctionLast,
 		Duration:     200 * time.Millisecond,
 	})
@@ -216,32 +222,26 @@ func main() {
 		return
 	}
 
-	var query string
-	call := d.DebounceLastFn(func(ctx context.Context) (string, error) {
-		return search(ctx, query) // reads the value set by the latest caller
-	})
+	call := d.DebounceLastFn(search)
 
 	// Rapid keystrokes — each call resets the 200ms quiet-period timer.
-	query = "a"
 	go func() {
-		_, err := call(context.Background())
+		_, err := call(context.Background(), SearchRequest{Query: "a"})
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("a: superseded")
 		}
 	}()
 	time.Sleep(20 * time.Millisecond)
 
-	query = "ab"
 	go func() {
-		_, err := call(context.Background())
+		_, err := call(context.Background(), SearchRequest{Query: "ab"})
 		if errors.Is(err, context.Canceled) {
 			fmt.Println("ab: superseded")
 		}
 	}()
 	time.Sleep(20 * time.Millisecond)
 
-	query = "abc"
-	res, err := call(context.Background()) // waits 200ms quiet, then runs search once
+	res, err := call(context.Background(), SearchRequest{Query: "abc"}) // waits 200ms quiet, then runs search once
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -287,8 +287,10 @@ import (
 	retry "github.com/D-Andreev/cloudnative-patterns/pkg/retry"
 )
 
+type RetryRequest struct{}
+
 func main() {
-	r, err := retry.NewRetry[string](retry.Settings{
+	r, err := retry.NewRetry[RetryRequest, string](retry.Settings{
 		Delay:       100 * time.Millisecond,
 		MaxFailures: 3,
 	})
@@ -298,7 +300,7 @@ func main() {
 	}
 
 	attempts := 0
-	call := r.RetryFn(func(context.Context) (string, error) {
+	call := r.RetryFn(func(context.Context, RetryRequest) (string, error) {
 		attempts++
 		if attempts < 3 {
 			return "", errors.New("temporary")
@@ -306,7 +308,7 @@ func main() {
 		return "ok", nil
 	})
 
-	res, err := call(context.Background())
+	res, err := call(context.Background(), RetryRequest{})
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -360,7 +362,7 @@ import (
 )
 
 func main() {
-	th, err := throttle.NewThrottle[string](throttle.Settings{
+	th, err := throttle.NewThrottle[struct{}, string](throttle.Settings{
 		Maximum:  2,
 		Duration: time.Second,
 		Refill:   2,
@@ -370,12 +372,12 @@ func main() {
 		return
 	}
 
-	call := th.ThrottleFnWithError(func(context.Context) (string, error) {
+	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
 		return "ok", nil
 	})
 
 	for i := 1; i <= 3; i++ {
-		res, err := call(context.Background())
+		res, err := call(context.Background(), struct{}{})
 		if err != nil {
 			fmt.Printf("call %d: throttled (%v)\n", i, err)
 			continue
@@ -409,7 +411,7 @@ import (
 )
 
 func main() {
-	th, err := throttle.NewThrottle[string](throttle.Settings{
+	th, err := throttle.NewThrottle[struct{}, string](throttle.Settings{
 		Maximum:  1,
 		Duration: time.Second,
 		Refill:   1,
@@ -420,13 +422,13 @@ func main() {
 	}
 
 	attempts := 0
-	call := th.ThrottleFnWithReplay(func(context.Context) (string, error) {
+	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
 		attempts++
 		return fmt.Sprintf("value-%d", attempts), nil
 	})
 
-	res1, _ := call(context.Background())
-	res2, _ := call(context.Background())
+	res1, _ := call(context.Background(), struct{}{})
+	res2, _ := call(context.Background(), struct{}{})
 
 	fmt.Println(res1)
 	fmt.Println(res2)
@@ -457,10 +459,12 @@ import (
 	throttle "github.com/D-Andreev/cloudnative-patterns/pkg/throttle"
 )
 
-type labelKey struct{}
+type QueueRequest struct {
+	Label string
+}
 
 func main() {
-	th, err := throttle.NewThrottle[string](throttle.Settings{
+	th, err := throttle.NewThrottle[QueueRequest, string](throttle.Settings{
 		Maximum:  1,
 		Duration: 100 * time.Millisecond,
 		Refill:   1,
@@ -470,24 +474,19 @@ func main() {
 		return
 	}
 
-	call := th.ThrottleFnWithQueue(func(ctx context.Context) (string, error) {
-		label, _ := ctx.Value(labelKey{}).(string)
-		return label, nil
+	call := th.ThrottleFnWithQueue(func(_ context.Context, req QueueRequest) (string, error) {
+		return req.Label, nil
 	})
 
-	ctxFirst := context.WithValue(context.Background(), labelKey{}, "first")
-	ctxQueued := context.WithValue(context.Background(), labelKey{}, "queued")
-	ctxCaller := context.WithValue(context.Background(), labelKey{}, "caller")
-
-	res, err := call(ctxFirst)
+	res, err := call(context.Background(), QueueRequest{Label: "first"})
 	fmt.Println("first:", res, "err:", err)
 
-	_, err = call(ctxQueued)
+	_, err = call(context.Background(), QueueRequest{Label: "queued"})
 	fmt.Println("queued:", err)
 
 	time.Sleep(150 * time.Millisecond)
 
-	res, err = call(ctxCaller)
+	res, err = call(context.Background(), QueueRequest{Label: "caller"})
 	fmt.Println("after refill:", res, "err:", err)
 }
 ```

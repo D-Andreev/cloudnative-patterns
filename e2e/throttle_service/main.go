@@ -22,9 +22,9 @@ const (
 	queueRefill      = 1
 )
 
-type ctxKey struct{}
+type emptyRequest struct{}
 
-type reqBody struct {
+type queueRequest struct {
 	Label string `json:"label"`
 }
 
@@ -38,13 +38,13 @@ type errorBody struct {
 }
 
 type service struct {
-	errorCalls atomic.Int32
+	errorCalls  atomic.Int32
 	replayCalls atomic.Int32
 	queueCalls  atomic.Int32
 
-	callWithError  func(context.Context) (respBody, error)
-	callWithReplay func(context.Context) (respBody, error)
-	callWithQueue  func(context.Context) (respBody, error)
+	callWithError  throttle.Effector[emptyRequest, respBody]
+	callWithReplay throttle.Effector[emptyRequest, respBody]
+	callWithQueue  throttle.Effector[queueRequest, respBody]
 }
 
 func newService() (*service, error) {
@@ -56,7 +56,7 @@ func newService() (*service, error) {
 }
 
 func (s *service) reset() error {
-	thError, err := throttle.NewThrottle[respBody](throttle.Settings{
+	thError, err := throttle.NewThrottle[emptyRequest, respBody](throttle.Settings{
 		Maximum:  throttleMaximum,
 		Duration: throttleDuration,
 		Refill:   throttleRefill,
@@ -65,7 +65,7 @@ func (s *service) reset() error {
 		return err
 	}
 
-	thReplay, err := throttle.NewThrottle[respBody](throttle.Settings{
+	thReplay, err := throttle.NewThrottle[emptyRequest, respBody](throttle.Settings{
 		Maximum:  replayMaximum,
 		Duration: throttleDuration,
 		Refill:   replayRefill,
@@ -74,7 +74,7 @@ func (s *service) reset() error {
 		return err
 	}
 
-	thQueue, err := throttle.NewThrottle[respBody](throttle.Settings{
+	thQueue, err := throttle.NewThrottle[queueRequest, respBody](throttle.Settings{
 		Maximum:  queueMaximum,
 		Duration: throttleDuration,
 		Refill:   queueRefill,
@@ -87,18 +87,17 @@ func (s *service) reset() error {
 	s.replayCalls.Store(0)
 	s.queueCalls.Store(0)
 
-	s.callWithError = thError.ThrottleFnWithError(func(context.Context) (respBody, error) {
+	s.callWithError = thError.ThrottleFnWithError(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.errorCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callWithReplay = thReplay.ThrottleFnWithReplay(func(context.Context) (respBody, error) {
+	s.callWithReplay = thReplay.ThrottleFnWithReplay(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.replayCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callWithQueue = thQueue.ThrottleFnWithQueue(func(ctx context.Context) (respBody, error) {
+	s.callWithQueue = thQueue.ThrottleFnWithQueue(func(_ context.Context, req queueRequest) (respBody, error) {
 		n := int(s.queueCalls.Add(1))
-		label, _ := ctx.Value(ctxKey{}).(string)
-		return respBody{Message: label, Calls: n}, nil
+		return respBody{Message: req.Label, Calls: n}, nil
 	})
 
 	return nil
@@ -134,7 +133,7 @@ func main() {
 			return
 		}
 
-		res, err := svc.callWithError(context.Background())
+		res, err := svc.callWithError(context.Background(), emptyRequest{})
 		if err != nil {
 			if err.Error() == "too many calls" {
 				writeJSON(w, http.StatusTooManyRequests, errorBody{Error: err.Error()})
@@ -152,7 +151,7 @@ func main() {
 			return
 		}
 
-		res, err := svc.callWithReplay(context.Background())
+		res, err := svc.callWithReplay(context.Background(), emptyRequest{})
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, errorBody{Error: err.Error()})
 			return
@@ -172,14 +171,13 @@ func main() {
 			return
 		}
 
-		var req reqBody
+		var req queueRequest
 		if err := json.Unmarshal(body, &req); err != nil || req.Label == "" {
 			writeJSON(w, http.StatusBadRequest, errorBody{Error: "bad request"})
 			return
 		}
 
-		ctx := context.WithValue(context.Background(), ctxKey{}, req.Label)
-		res, err := svc.callWithQueue(ctx)
+		res, err := svc.callWithQueue(context.Background(), req)
 		if err != nil {
 			if err.Error() == "too many calls" {
 				writeJSON(w, http.StatusTooManyRequests, errorBody{Error: err.Error()})

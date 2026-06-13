@@ -14,6 +14,8 @@ import (
 
 const debounceDuration = 200 * time.Millisecond
 
+type emptyRequest struct{}
+
 type respBody struct {
 	Message string `json:"message"`
 	Calls   int    `json:"calls"`
@@ -27,11 +29,11 @@ type service struct {
 	firstCalls atomic.Int32
 	lastCalls  atomic.Int32
 
-	firstDeb *debounce.Debounce[respBody]
-	lastDeb  *debounce.Debounce[respBody]
+	firstDeb *debounce.Debounce[emptyRequest, respBody]
+	lastDeb  *debounce.Debounce[emptyRequest, respBody]
 
-	callFirst func(context.Context) (respBody, error)
-	callLast  func(context.Context) (respBody, error)
+	callFirst debounce.Circuit[emptyRequest, respBody]
+	callLast  debounce.Circuit[emptyRequest, respBody]
 }
 
 func newService() (*service, error) {
@@ -43,7 +45,7 @@ func newService() (*service, error) {
 }
 
 func (s *service) reset() error {
-	firstDeb, err := debounce.NewDebounce[respBody](debounce.Settings{
+	firstDeb, err := debounce.NewDebounce[emptyRequest, respBody](debounce.Settings{
 		DebounceType: debounce.FunctionFirst,
 		Duration:     debounceDuration,
 	})
@@ -51,7 +53,7 @@ func (s *service) reset() error {
 		return err
 	}
 
-	lastDeb, err := debounce.NewDebounce[respBody](debounce.Settings{
+	lastDeb, err := debounce.NewDebounce[emptyRequest, respBody](debounce.Settings{
 		DebounceType: debounce.FunctionLast,
 		Duration:     debounceDuration,
 	})
@@ -64,11 +66,11 @@ func (s *service) reset() error {
 	s.firstDeb = firstDeb
 	s.lastDeb = lastDeb
 
-	s.callFirst = firstDeb.DebounceFirstFn(func(context.Context) (respBody, error) {
+	s.callFirst = firstDeb.First(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.firstCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callLast = lastDeb.DebounceLastFn(func(ctx context.Context) (respBody, error) {
+	s.callLast = lastDeb.Last(func(ctx context.Context, _ emptyRequest) (respBody, error) {
 		n := int(s.lastCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
@@ -105,7 +107,7 @@ func main() {
 			writeJSON(w, http.StatusMethodNotAllowed, errorBody{Error: "method not allowed"})
 			return
 		}
-		res, err := svc.callFirst(r.Context())
+		res, err := svc.callFirst(r.Context(), emptyRequest{})
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, errorBody{Error: err.Error()})
 			return
@@ -118,7 +120,7 @@ func main() {
 			writeJSON(w, http.StatusMethodNotAllowed, errorBody{Error: "method not allowed"})
 			return
 		}
-		res, err := svc.callLast(r.Context())
+		res, err := svc.callLast(r.Context(), emptyRequest{})
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				writeJSON(w, http.StatusConflict, errorBody{Error: err.Error()})

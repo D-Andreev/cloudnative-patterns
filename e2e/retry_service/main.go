@@ -39,7 +39,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func main() {
-	retrier, err := retry.NewRetry[respBody](retry.Settings{
+	retrier, err := retry.NewRetry[reqBody, respBody](retry.Settings{
 		Delay:       retryDelay,
 		MaxFailures: maxFailures,
 	})
@@ -73,17 +73,16 @@ func main() {
 			return
 		}
 
-		failUntil := req.FailUntil
 		var attempts int
-		call := retrier.RetryFn(func(context.Context) (respBody, error) {
+		call := retrier.Wrap(func(context.Context, reqBody) (respBody, error) {
 			attempts++
-			if attempts < failUntil {
+			if attempts < req.FailUntil {
 				return respBody{}, errors.New(errTemporary)
 			}
 			return respBody{Message: "ok", Attempts: attempts}, nil
 		})
 
-		res, err := call(r.Context())
+		res, err := call(r.Context(), req)
 		if err != nil {
 			writeJSON(w, http.StatusServiceUnavailable, errorBody{
 				Error:    err.Error(),

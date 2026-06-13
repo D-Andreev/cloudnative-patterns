@@ -17,30 +17,30 @@ type Settings struct {
 	MaxFailures int
 }
 
-// Effector is the function executed by Retry.
-type Effector[T any] func(ctx context.Context) (T, error)
+// Effector executes downstream work for a request and may fail.
+type Effector[A, T any] func(ctx context.Context, req A) (T, error)
 
 // Retry executes an Effector with retries on error.
-type Retry[T any] struct {
+type Retry[A, T any] struct {
 	delay       time.Duration
 	maxFailures int
 }
 
 // NewRetry returns a Retry.
-func NewRetry[T any](settings Settings) (*Retry[T], error) {
-	return &Retry[T]{
+func NewRetry[A, T any](settings Settings) (*Retry[A, T], error) {
+	return &Retry[A, T]{
 		delay:       settings.Delay,
 		maxFailures: settings.MaxFailures,
 	}, nil
 }
 
-// RetryFn wraps effector with retry behavior. On error it waits Delay and invokes
+// Wrap wraps effector with retry behavior. On error it waits Delay and invokes
 // effector again until it succeeds, MaxFailures retries are exhausted, or ctx is
-// canceled. Call RetryFn once and reuse the returned Effector.
-func (retry *Retry[T]) RetryFn(e Effector[T]) Effector[T] {
-	return func(ctx context.Context) (T, error) {
+// canceled. Call Wrap once and reuse the returned Effector.
+func (retry *Retry[A, T]) Wrap(e Effector[A, T]) Effector[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		for i := 0; ; i++ {
-			r, err := e(ctx)
+			r, err := e(ctx, req)
 			if err == nil || i >= retry.maxFailures {
 				return r, err
 			}

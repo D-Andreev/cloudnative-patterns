@@ -88,7 +88,7 @@ func TestCircuitBreakerInvalidSettings(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			b, err := NewBreaker[string](tc.settings)
+			b, err := NewBreaker[struct{}, string](tc.settings)
 			if tc.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, b)
@@ -162,7 +162,7 @@ func TestCircuitBreaker(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			circuitCalledTimes := 0
-			circuitFn := func(ctx context.Context) (string, error) {
+			circuitFn := func(ctx context.Context, _ struct{}) (string, error) {
 				if circuitCalledTimes >= tc.circuitReturnErrAfter && tc.circuitReturnErrAfter > 0 {
 					if circuitCalledTimes >= tc.circuitReturnSuccessAfter && tc.circuitReturnSuccessAfter > 0 {
 						circuitCalledTimes++
@@ -181,16 +181,16 @@ func TestCircuitBreaker(t *testing.T) {
 				},
 				Threshold: tc.threshold,
 			}
-			b, err := NewBreaker[string](settings)
+			b, err := NewBreaker[struct{}, string](settings)
 			assert.Equal(t, nil, err, "Invalid settings")
-			c := b.BreakerFn(circuitFn)
+			c := b.Wrap(circuitFn)
 			var results []string
 			var errs []error
 			for i := range tc.callBreakerTimes {
 				if tc.pauseAfterInocationN == i {
 					time.Sleep(2 * time.Second)
 				}
-				res, err := c(context.Background())
+				res, err := c(context.Background(), struct{}{})
 				results = append(results, res)
 				errs = append(errs, err)
 			}
@@ -206,7 +206,7 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 	const threshold = 1
 	circuitCalled := 0
 	var circuitMu sync.Mutex
-	circuitFn := func(ctx context.Context) (string, error) {
+	circuitFn := func(ctx context.Context, _ struct{}) (string, error) {
 		circuitMu.Lock()
 		circuitCalled++
 		circuitMu.Unlock()
@@ -218,11 +218,11 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 		IsFailure: func(err error) bool { return err != nil },
 		Threshold: threshold,
 	}
-	b, err := NewBreaker[string](settings)
+	b, err := NewBreaker[struct{}, string](settings)
 	assert.Equal(t, nil, err, "Invalid settings")
-	c := b.BreakerFn(circuitFn)
+	c := b.Wrap(circuitFn)
 
-	_, _ = c(context.Background())
+	_, _ = c(context.Background(), struct{}{})
 	assert.Equal(t, Open, b.State())
 
 	time.Sleep(2 * time.Second)
@@ -234,7 +234,7 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			_, errs[idx] = c(context.Background())
+			_, errs[idx] = c(context.Background(), struct{}{})
 		}(i)
 	}
 	wg.Wait()
@@ -299,7 +299,7 @@ func TestOpenBackoffDuration(t *testing.T) {
 }
 
 func TestNewBreakerDefaultOpenBackoff(t *testing.T) {
-	b, err := NewBreaker[string](Settings{
+	b, err := NewBreaker[struct{}, string](Settings{
 		IsFailure: func(err error) bool { return err != nil },
 		Threshold: 1,
 	})
@@ -320,31 +320,31 @@ func TestOpenFixedBackoffBlocksUntilBaseElapsed(t *testing.T) {
 			Base:     4 * time.Second,
 		},
 	}
-	b, err := NewBreaker[string](settings)
+	b, err := NewBreaker[struct{}, string](settings)
 	assert.NoError(t, err)
 
-	call := b.BreakerFn(func(ctx context.Context) (string, error) {
+	call := b.Wrap(func(ctx context.Context, _ struct{}) (string, error) {
 		return "", errors.New("fail")
 	})
 
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	assert.Error(t, err)
 	assert.Equal(t, Open, b.State())
 
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	assert.True(t, errors.Is(err, BreakerErrResponse))
 
 	time.Sleep(2 * time.Second)
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	assert.True(t, errors.Is(err, BreakerErrResponse))
 
 	time.Sleep(3 * time.Second)
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	assert.Error(t, err)
 	assert.False(t, errors.Is(err, BreakerErrResponse))
 
 	time.Sleep(4 * time.Second)
-	_, err = call(context.Background())
+	_, err = call(context.Background(), struct{}{})
 	assert.NotNil(t, err)
 	assert.Equal(t, "fail", err.Error())
 }

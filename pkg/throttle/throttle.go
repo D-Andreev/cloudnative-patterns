@@ -23,11 +23,11 @@ type Settings struct {
 	Refill uint `validate:"min=1"`
 }
 
-// Effector is the function executed by Throttle.
-type Effector[T any] func(ctx context.Context) (T, error)
+// Effector executes downstream work for a request and may fail.
+type Effector[A, T any] func(ctx context.Context, req A) (T, error)
 
 // Throttle executes an Effector Maximum times for Duration
-type Throttle[T any] struct {
+type Throttle[A, T any] struct {
 	maximum           uint
 	duration          time.Duration
 	refill            uint
@@ -35,17 +35,17 @@ type Throttle[T any] struct {
 	once              sync.Once
 	mu                sync.Mutex
 	lastSuccessfulRes T
-	queue             queue.Queue[context.Context]
+	queue             queue.Queue[A]
 }
 
-// NewThrottle validates settings and returns a Retry.
-func NewThrottle[T any](settings Settings) (*Throttle[T], error) {
+// NewThrottle validates settings and returns a Throttle.
+func NewThrottle[A, T any](settings Settings) (*Throttle[A, T], error) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(settings)
 	if err != nil {
 		return nil, err
 	}
-	return &Throttle[T]{
+	return &Throttle[A, T]{
 		maximum:  settings.Maximum,
 		duration: settings.Duration,
 		refill:   settings.Refill,
@@ -53,11 +53,11 @@ func NewThrottle[T any](settings Settings) (*Throttle[T], error) {
 	}, nil
 }
 
-// ThrottleFnWithError wraps effector with throttle behavior.
+// WithError wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled an error is returned
-func (throttle *Throttle[T]) ThrottleFnWithError(e Effector[T]) Effector[T] {
-	return func(ctx context.Context) (T, error) {
+func (throttle *Throttle[A, T]) WithError(e Effector[A, T]) Effector[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T
 			return zeroT, ctx.Err()
@@ -92,15 +92,15 @@ func (throttle *Throttle[T]) ThrottleFnWithError(e Effector[T]) Effector[T] {
 
 		throttle.tokens--
 
-		return e(ctx)
+		return e(ctx, req)
 	}
 }
 
-// ThrottleFnWithReplay wraps effector with throttle behavior.
+// WithReplay wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled the last successful response is returned
-func (throttle *Throttle[T]) ThrottleFnWithReplay(e Effector[T]) Effector[T] {
-	return func(ctx context.Context) (T, error) {
+func (throttle *Throttle[A, T]) WithReplay(e Effector[A, T]) Effector[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T
 			return zeroT, ctx.Err()
@@ -134,7 +134,7 @@ func (throttle *Throttle[T]) ThrottleFnWithReplay(e Effector[T]) Effector[T] {
 
 		throttle.tokens--
 
-		res, err := e(ctx)
+		res, err := e(ctx, req)
 		if err == nil {
 			throttle.lastSuccessfulRes = res
 		}
@@ -143,11 +143,11 @@ func (throttle *Throttle[T]) ThrottleFnWithReplay(e Effector[T]) Effector[T] {
 	}
 }
 
-// ThrottleFnWithQueue wraps effector with throttle behavior.
+// WithQueue wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled the requests are put in a queue and invoked when tokens are available
-func (throttle *Throttle[T]) ThrottleFnWithQueue(e Effector[T]) Effector[T] {
-	return func(ctx context.Context) (T, error) {
+func (throttle *Throttle[A, T]) WithQueue(e Effector[A, T]) Effector[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T
 			return zeroT, ctx.Err()
@@ -176,7 +176,7 @@ func (throttle *Throttle[T]) ThrottleFnWithQueue(e Effector[T]) Effector[T] {
 		defer throttle.mu.Unlock()
 
 		if throttle.tokens <= 0 {
-			throttle.queue.Enqueue(ctx)
+			throttle.queue.Enqueue(req)
 			var zeroT T
 			return zeroT, tooManyCalls
 		}
@@ -184,16 +184,15 @@ func (throttle *Throttle[T]) ThrottleFnWithQueue(e Effector[T]) Effector[T] {
 		throttle.tokens--
 
 		if throttle.queue.IsEmpty() {
-			return e(ctx)
+			return e(ctx, req)
 		}
 
-		ctxFromQueue, err := throttle.queue.Dequeue()
+		reqFromQueue, err := throttle.queue.Dequeue()
 		if err != nil {
-			// This should never happen, but if queue is empty just execute the current ctx
-			return e(ctx)
+			return e(ctx, req)
 		}
 
-		throttle.queue.Enqueue(ctx)
-		return e(ctxFromQueue)
+		throttle.queue.Enqueue(req)
+		return e(ctx, reqFromQueue)
 	}
 }

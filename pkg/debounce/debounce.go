@@ -31,11 +31,11 @@ type Settings struct {
 	DebounceType DebounceType `validate:"min=0,max=1"`
 }
 
-// Circuit is the inner function that's executed in debounce
-type Circuit[T any] func(context.Context) (T, error)
+// Circuit executes downstream work for a request and may fail.
+type Circuit[A, T any] func(context.Context, A) (T, error)
 
 // Debounce limits call frequency of a function
-type Debounce[T any] struct {
+type Debounce[A, T any] struct {
 	mu       sync.Mutex
 	duration time.Duration
 
@@ -50,7 +50,7 @@ type Debounce[T any] struct {
 }
 
 // NewDebounce validates settings and returns a Debounce
-func NewDebounce[T any](settings Settings) (*Debounce[T], error) {
+func NewDebounce[A, T any](settings Settings) (*Debounce[A, T], error) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(settings)
 	if err != nil {
@@ -59,7 +59,7 @@ func NewDebounce[T any](settings Settings) (*Debounce[T], error) {
 
 	settings = normalizeSettings(settings)
 
-	return &Debounce[T]{
+	return &Debounce[A, T]{
 		duration: settings.Duration,
 	}, nil
 }
@@ -71,11 +71,11 @@ func normalizeSettings(s Settings) Settings {
 	return s
 }
 
-// DebounceFirstFn wraps circuit and returns a function that debounces function-first style.
+// First wraps circuit and returns a function that debounces function-first style.
 // The first call in a window runs circuit; later calls within Duration return the same result.
-// Call DebounceFirstFn once and reuse the returned Circuit.
-func (deb *Debounce[T]) DebounceFirstFn(circuit Circuit[T]) Circuit[T] {
-	return func(ctx context.Context) (T, error) {
+// Call First once and reuse the returned Circuit.
+func (deb *Debounce[A, T]) First(circuit Circuit[A, T]) Circuit[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		deb.mu.Lock()
 		if time.Now().Before(deb.threshold) {
 			if deb.firstInFlight {
@@ -100,7 +100,7 @@ func (deb *Debounce[T]) DebounceFirstFn(circuit Circuit[T]) Circuit[T] {
 		runCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		result, err := circuit(runCtx)
+		result, err := circuit(runCtx, req)
 
 		deb.mu.Lock()
 		deb.cachedResult = result
@@ -113,12 +113,12 @@ func (deb *Debounce[T]) DebounceFirstFn(circuit Circuit[T]) Circuit[T] {
 	}
 }
 
-// DebounceLastFn wraps circuit and returns a function that debounces function-last style.
+// Last wraps circuit and returns a function that debounces function-last style.
 // Each call resets the timer; circuit runs once after Duration passes with no new calls.
 // Superseded callers receive ctx.Err() when a newer call replaces them.
-// Call DebounceLastFn once and reuse the returned Circuit.
-func (deb *Debounce[T]) DebounceLastFn(circuit Circuit[T]) Circuit[T] {
-	return func(ctx context.Context) (T, error) {
+// Call Last once and reuse the returned Circuit.
+func (deb *Debounce[A, T]) Last(circuit Circuit[A, T]) Circuit[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		deb.mu.Lock()
 
 		if deb.lastCancel != nil {
@@ -137,7 +137,7 @@ func (deb *Debounce[T]) DebounceLastFn(circuit Circuit[T]) Circuit[T] {
 		}, 1)
 
 		deb.timer = time.AfterFunc(deb.duration, func() {
-			result, err := circuit(runCtx)
+			result, err := circuit(runCtx, req)
 			resCh <- struct {
 				result T
 				err    error

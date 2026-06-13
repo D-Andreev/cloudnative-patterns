@@ -28,6 +28,10 @@ var settings = circuitbreaker.Settings{
 	Threshold: 3,
 }
 
+type HelloRequest struct {
+	Body string
+}
+
 type ReqBody struct {
 	Input string
 }
@@ -36,10 +40,8 @@ type RespBody struct {
 	Message string
 }
 
-func hello(ctx context.Context) (string, error) {
-	body := ctx.Value("body")
-	var r io.Reader = strings.NewReader(body.(string))
-	decoder := json.NewDecoder(r)
+func hello(ctx context.Context, req HelloRequest) (string, error) {
+	decoder := json.NewDecoder(strings.NewReader(req.Body))
 	var b ReqBody
 	err := decoder.Decode(&b)
 	if err != nil {
@@ -53,16 +55,19 @@ func hello(ctx context.Context) (string, error) {
 }
 
 func main() {
-	b, err := circuitbreaker.NewBreaker[string](settings)
+	b, err := circuitbreaker.NewBreaker[HelloRequest, string](settings)
 	if err != nil {
 		panic(err)
 	}
-	helloWithBreaker := b.BreakerFn(hello)
+	helloWithBreaker := b.Wrap(hello)
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		bytedata, err := io.ReadAll(r.Body)
-		reqBodyString := string(bytedata)
-		c := context.WithValue(context.Background(), "body", reqBodyString)
-		res, err := helloWithBreaker(c)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+
+		res, err := helloWithBreaker(r.Context(), HelloRequest{Body: string(bytedata)})
 
 		if errors.Is(err, circuitbreaker.BreakerErrResponse) {
 			w.Header().Set("Content-Type", "application/json")
@@ -88,4 +93,10 @@ func main() {
 		json.NewEncoder(w).Encode(resp)
 	})
 	http.ListenAndServe(":8090", nil)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(RespBody{Message: message})
 }

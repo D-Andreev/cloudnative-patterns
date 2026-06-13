@@ -104,8 +104,11 @@ func (s State) String() string {
 	}
 }
 
-// Circuit is a function that may fail and is protected by the breaker.
-type Circuit[T any] func(context.Context) (T, error)
+// Circuit executes downstream work for a request and may fail.
+type Circuit[A, T any] func(context.Context, A) (T, error)
+
+// Call is the breaker-wrapped function returned by BreakerFn.
+type Call[A, T any] func(context.Context, A) (T, error)
 
 // IsFailureFunc reports whether an error from the wrapped circuit should count
 // toward opening the breaker.
@@ -125,7 +128,7 @@ type Settings struct {
 }
 
 // Breaker executes a Circuit with open, closed, and half-open state transitions.
-type Breaker[T any] struct {
+type Breaker[A, T any] struct {
 	isFailure     IsFailureFunc
 	openBackoff   OpenBackoff
 	mu            sync.Mutex
@@ -137,7 +140,7 @@ type Breaker[T any] struct {
 }
 
 // NewBreaker validates settings and returns a breaker in the closed state.
-func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
+func NewBreaker[A, T any](settings Settings) (*Breaker[A, T], error) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	err := validate.Struct(settings)
 	if err != nil {
@@ -149,7 +152,7 @@ func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 		return nil, err
 	}
 
-	return &Breaker[T]{
+	return &Breaker[A, T]{
 		isFailure:   settings.IsFailure,
 		openBackoff: openBackoff,
 		state:       Closed,
@@ -158,18 +161,18 @@ func NewBreaker[T any](settings Settings) (*Breaker[T], error) {
 }
 
 // State returns the current breaker state.
-func (b *Breaker[T]) State() State {
+func (b *Breaker[A, T]) State() State {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.state
 }
 
-func (b *Breaker[T]) retryAt() time.Time {
+func (b *Breaker[A, T]) retryAt() time.Time {
 	d := max(b.failures-b.threshold, 0)
 	return b.last.Add(b.openBackoff.Duration(d))
 }
 
-func (b *Breaker[T]) tryAcquireProbe() bool {
+func (b *Breaker[A, T]) tryAcquireProbe() bool {
 	switch b.state {
 	case Closed:
 		return true
@@ -191,9 +194,9 @@ func (b *Breaker[T]) tryAcquireProbe() bool {
 }
 
 // BreakerFn wraps circuit and returns a function that enforces breaker semantics.
-// Call BreakerFn once and reuse the returned Circuit; do not call BreakerFn on every request.
-func (b *Breaker[T]) BreakerFn(circuit Circuit[T]) Circuit[T] {
-	return func(ctx context.Context) (T, error) {
+// Call BreakerFn once and reuse the returned Call; do not call BreakerFn on every request.
+func (b *Breaker[A, T]) BreakerFn(circuit Circuit[A, T]) Call[A, T] {
+	return func(ctx context.Context, req A) (T, error) {
 		b.mu.Lock()
 		if !b.tryAcquireProbe() {
 			b.mu.Unlock()
@@ -202,7 +205,7 @@ func (b *Breaker[T]) BreakerFn(circuit Circuit[T]) Circuit[T] {
 		}
 		b.mu.Unlock()
 
-		response, err := circuit(ctx)
+		response, err := circuit(ctx, req)
 
 		b.mu.Lock()
 		defer b.mu.Unlock()

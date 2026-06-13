@@ -38,6 +38,7 @@ go get github.com/D-Andreev/cloudnative-patterns
 
 
 ### Usage
+
 ```go
 package main
 
@@ -49,7 +50,9 @@ import (
 	breaker "github.com/D-Andreev/cloudnative-patterns/pkg/circuit_breaker"
 )
 
-func callDownstream(ctx context.Context) (string, error) {
+type CallRequest struct{}
+
+func callDownstream(ctx context.Context, _ CallRequest) (string, error) {
 	return "", errors.New("timeout")
 }
 
@@ -58,7 +61,7 @@ func main() {
 		IsFailure: func(err error) bool { return err != nil },
 		Threshold: 3,
 	}
-	b, err := breaker.NewBreaker[string](settings)
+	b, err := breaker.NewBreaker[CallRequest, string](settings)
 	if err != nil {
 		fmt.Println("Invalid settings", err)
 		return
@@ -66,7 +69,7 @@ func main() {
 	call := b.BreakerFn(callDownstream)
 
 	for i := 1; i <= 5; i++ {
-		_, err := call(context.Background())
+		_, err := call(context.Background(), CallRequest{})
 
 		switch {
 		case errors.Is(err, breaker.BreakerErrResponse):

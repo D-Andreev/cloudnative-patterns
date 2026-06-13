@@ -71,10 +71,10 @@ func normalizeSettings(s Settings) Settings {
 	return s
 }
 
-// DebounceFirstFn wraps circuit and returns a function that debounces function-first style.
+// First wraps circuit and returns a function that debounces function-first style.
 // The first call in a window runs circuit; later calls within Duration return the same result.
-// Call DebounceFirstFn once and reuse the returned Circuit.
-func (deb *Debounce[A, T]) DebounceFirstFn(circuit Circuit[A, T]) Circuit[A, T] {
+// Call First once and reuse the returned Circuit.
+func (deb *Debounce[A, T]) First(circuit Circuit[A, T]) Circuit[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		deb.mu.Lock()
 		if time.Now().Before(deb.threshold) {
@@ -113,11 +113,11 @@ func (deb *Debounce[A, T]) DebounceFirstFn(circuit Circuit[A, T]) Circuit[A, T] 
 	}
 }
 
-// DebounceLastFn wraps circuit and returns a function that debounces function-last style.
+// Last wraps circuit and returns a function that debounces function-last style.
 // Each call resets the timer; circuit runs once after Duration passes with no new calls.
 // Superseded callers receive ctx.Err() when a newer call replaces them.
-// Call DebounceLastFn once and reuse the returned Circuit.
-func (deb *Debounce[A, T]) DebounceLastFn(circuit Circuit[A, T]) Circuit[A, T] {
+// Call Last once and reuse the returned Circuit.
+func (deb *Debounce[A, T]) Last(circuit Circuit[A, T]) Circuit[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		deb.mu.Lock()
 

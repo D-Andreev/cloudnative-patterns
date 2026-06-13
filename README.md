@@ -66,7 +66,7 @@ func main() {
 		fmt.Println("Invalid settings", err)
 		return
 	}
-	call := b.BreakerFn(callDownstream)
+	call := b.Wrap(callDownstream)
 
 	for i := 1; i <= 5; i++ {
 		_, err := call(context.Background(), CallRequest{})
@@ -173,7 +173,7 @@ func main() {
 		return
 	}
 
-	call := d.DebounceFirstFn(fetch)
+	call := d.First(fetch)
 
 	res1, _ := call(context.Background(), FetchRequest{}) // runs fetch
 	res2, _ := call(context.Background(), FetchRequest{}) // cached
@@ -222,7 +222,7 @@ func main() {
 		return
 	}
 
-	call := d.DebounceLastFn(search)
+	call := d.Last(search)
 
 	// Rapid keystrokes — each call resets the 200ms quiet-period timer.
 	go func() {
@@ -300,7 +300,7 @@ func main() {
 	}
 
 	attempts := 0
-	call := r.RetryFn(func(context.Context, RetryRequest) (string, error) {
+	call := r.Wrap(func(context.Context, RetryRequest) (string, error) {
 		attempts++
 		if attempts < 3 {
 			return "", errors.New("temporary")
@@ -340,9 +340,9 @@ The first two failures wait `Delay` and retry. On success the loop returns immed
 
 | Mode | Method | When throttled |
 |------|--------|----------------|
-| **Error** | `ThrottleFnWithError` | Returns `too many calls` and does not run the effector. |
-| **Replay** | `ThrottleFnWithReplay` | Returns the last successful result without running the effector. |
-| **Queue** | `ThrottleFnWithQueue` | Enqueues the request and returns `too many calls`; a later caller with a token processes queued requests (FIFO). |
+| **Error** | `WithError` | Returns `too many calls` and does not run the effector. |
+| **Replay** | `WithReplay` | Returns the last successful result without running the effector. |
+| **Queue** | `WithQueue` | Enqueues the request and returns `too many calls`; a later caller with a token processes queued requests (FIFO). |
 
 ### Usage
 
@@ -372,7 +372,7 @@ func main() {
 		return
 	}
 
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		return "ok", nil
 	})
 
@@ -422,7 +422,7 @@ func main() {
 	}
 
 	attempts := 0
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		attempts++
 		return fmt.Sprintf("value-%d", attempts), nil
 	})
@@ -474,7 +474,7 @@ func main() {
 		return
 	}
 
-	call := th.ThrottleFnWithQueue(func(_ context.Context, req QueueRequest) (string, error) {
+	call := th.WithQueue(func(_ context.Context, req QueueRequest) (string, error) {
 		return req.Label, nil
 	})
 

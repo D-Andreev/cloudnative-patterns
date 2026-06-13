@@ -87,15 +87,15 @@ func (s *service) reset() error {
 	s.replayCalls.Store(0)
 	s.queueCalls.Store(0)
 
-	s.callWithError = thError.ThrottleFnWithError(func(context.Context, emptyRequest) (respBody, error) {
+	s.callWithError = thError.WithError(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.errorCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callWithReplay = thReplay.ThrottleFnWithReplay(func(context.Context, emptyRequest) (respBody, error) {
+	s.callWithReplay = thReplay.WithReplay(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.replayCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callWithQueue = thQueue.ThrottleFnWithQueue(func(_ context.Context, req queueRequest) (respBody, error) {
+	s.callWithQueue = thQueue.WithQueue(func(_ context.Context, req queueRequest) (respBody, error) {
 		n := int(s.queueCalls.Add(1))
 		return respBody{Message: req.Label, Calls: n}, nil
 	})

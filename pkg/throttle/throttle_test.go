@@ -60,7 +60,7 @@ func TestNewThrottleValidSettings(t *testing.T) {
 	require.NotNil(t, th)
 }
 
-func TestThrottleFnAllowsCallsUpToMaximum(t *testing.T) {
+func TestWithErrorAllowsCallsUpToMaximum(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  3,
 		Duration: time.Second,
@@ -69,7 +69,7 @@ func TestThrottleFnAllowsCallsUpToMaximum(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -87,7 +87,7 @@ func TestThrottleFnAllowsCallsUpToMaximum(t *testing.T) {
 	assert.Equal(t, 3, calls)
 }
 
-func TestThrottleFnConsumesTokenOnEffectorError(t *testing.T) {
+func TestWithErrorConsumesTokenOnEffectorError(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -96,7 +96,7 @@ func TestThrottleFnConsumesTokenOnEffectorError(t *testing.T) {
 	require.NoError(t, err)
 
 	wantErr := errors.New("downstream failed")
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		return "", wantErr
 	})
 
@@ -109,7 +109,7 @@ func TestThrottleFnConsumesTokenOnEffectorError(t *testing.T) {
 	assert.ErrorIs(t, err, tooManyCalls)
 }
 
-func TestThrottleFnRefillsTokens(t *testing.T) {
+func TestWithErrorRefillsTokens(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  2,
 		Duration: 50 * time.Millisecond,
@@ -118,7 +118,7 @@ func TestThrottleFnRefillsTokens(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -140,7 +140,7 @@ func TestThrottleFnRefillsTokens(t *testing.T) {
 	assert.Equal(t, 3, calls)
 }
 
-func TestThrottleFnPartialRefill(t *testing.T) {
+func TestWithErrorPartialRefill(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  3,
 		Duration: 50 * time.Millisecond,
@@ -148,7 +148,7 @@ func TestThrottleFnPartialRefill(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		return "ok", nil
 	})
 
@@ -171,7 +171,7 @@ func TestThrottleFnPartialRefill(t *testing.T) {
 	assert.ErrorIs(t, err, tooManyCalls)
 }
 
-func TestThrottleFnContextCanceledBeforeCall(t *testing.T) {
+func TestWithErrorContextCanceledBeforeCall(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  3,
 		Duration: time.Second,
@@ -183,7 +183,7 @@ func TestThrottleFnContextCanceledBeforeCall(t *testing.T) {
 	cancel()
 
 	var calls int
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -195,7 +195,7 @@ func TestThrottleFnContextCanceledBeforeCall(t *testing.T) {
 	assert.Equal(t, 0, calls)
 }
 
-func TestThrottleFnDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
+func TestWithErrorDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -204,7 +204,7 @@ func TestThrottleFnDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithError(func(context.Context, struct{}) (string, error) {
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -218,7 +218,7 @@ func TestThrottleFnDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestThrottleFnWithReplayReturnsLastSuccessWhenThrottled(t *testing.T) {
+func TestWithReplayReturnsLastSuccessWhenThrottled(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -227,7 +227,7 @@ func TestThrottleFnWithReplayReturnsLastSuccessWhenThrottled(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "cached", nil
 	})
@@ -242,7 +242,7 @@ func TestThrottleFnWithReplayReturnsLastSuccessWhenThrottled(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestThrottleFnWithReplayUpdatesReplayOnSuccess(t *testing.T) {
+func TestWithReplayUpdatesReplayOnSuccess(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  2,
 		Duration: time.Second,
@@ -250,7 +250,7 @@ func TestThrottleFnWithReplayUpdatesReplayOnSuccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		return "latest", nil
 	})
 
@@ -267,7 +267,7 @@ func TestThrottleFnWithReplayUpdatesReplayOnSuccess(t *testing.T) {
 	assert.Equal(t, "latest", res)
 }
 
-func TestThrottleFnWithReplayDoesNotUpdateReplayOnEffectorError(t *testing.T) {
+func TestWithReplayDoesNotUpdateReplayOnEffectorError(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  2,
 		Duration: time.Second,
@@ -277,7 +277,7 @@ func TestThrottleFnWithReplayDoesNotUpdateReplayOnEffectorError(t *testing.T) {
 
 	wantErr := errors.New("downstream failed")
 	var calls int
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		calls++
 		if calls == 1 {
 			return "ok", nil
@@ -299,7 +299,7 @@ func TestThrottleFnWithReplayDoesNotUpdateReplayOnEffectorError(t *testing.T) {
 	assert.Equal(t, 2, calls)
 }
 
-func TestThrottleFnWithReplayReturnsZeroValueWhenThrottledWithNoPriorSuccess(t *testing.T) {
+func TestWithReplayReturnsZeroValueWhenThrottledWithNoPriorSuccess(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -308,7 +308,7 @@ func TestThrottleFnWithReplayReturnsZeroValueWhenThrottledWithNoPriorSuccess(t *
 	require.NoError(t, err)
 
 	wantErr := errors.New("downstream failed")
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		return "", wantErr
 	})
 
@@ -321,7 +321,7 @@ func TestThrottleFnWithReplayReturnsZeroValueWhenThrottledWithNoPriorSuccess(t *
 	assert.Empty(t, res)
 }
 
-func TestThrottleFnWithReplayContextCanceledBeforeCall(t *testing.T) {
+func TestWithReplayContextCanceledBeforeCall(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -333,7 +333,7 @@ func TestThrottleFnWithReplayContextCanceledBeforeCall(t *testing.T) {
 	cancel()
 
 	var calls int
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -345,7 +345,7 @@ func TestThrottleFnWithReplayContextCanceledBeforeCall(t *testing.T) {
 	assert.Equal(t, 0, calls)
 }
 
-func TestThrottleFnWithReplayRefillsAndCallsEffectorAgain(t *testing.T) {
+func TestWithReplayRefillsAndCallsEffectorAgain(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: 50 * time.Millisecond,
@@ -354,7 +354,7 @@ func TestThrottleFnWithReplayRefillsAndCallsEffectorAgain(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithReplay(func(context.Context, struct{}) (string, error) {
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
 		calls++
 		if calls == 1 {
 			return "first", nil
@@ -382,7 +382,7 @@ type labelRequest struct {
 	Label string
 }
 
-func TestThrottleFnWithQueueAllowsCallWhenTokenAvailable(t *testing.T) {
+func TestWithQueueAllowsCallWhenTokenAvailable(t *testing.T) {
 	th, err := NewThrottle[labelRequest, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -391,7 +391,7 @@ func TestThrottleFnWithQueueAllowsCallWhenTokenAvailable(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithQueue(func(_ context.Context, req labelRequest) (string, error) {
+	call := th.WithQueue(func(_ context.Context, req labelRequest) (string, error) {
 		calls++
 		return req.Label, nil
 	})
@@ -402,7 +402,7 @@ func TestThrottleFnWithQueueAllowsCallWhenTokenAvailable(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestThrottleFnWithQueueReturnsTooManyCallsWhenThrottled(t *testing.T) {
+func TestWithQueueReturnsTooManyCallsWhenThrottled(t *testing.T) {
 	th, err := NewThrottle[labelRequest, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -411,7 +411,7 @@ func TestThrottleFnWithQueueReturnsTooManyCallsWhenThrottled(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithQueue(func(_ context.Context, req labelRequest) (string, error) {
+	call := th.WithQueue(func(_ context.Context, req labelRequest) (string, error) {
 		calls++
 		return req.Label, nil
 	})
@@ -426,7 +426,7 @@ func TestThrottleFnWithQueueReturnsTooManyCallsWhenThrottled(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestThrottleFnWithQueueProcessesQueuedRequestWhenTokenAvailable(t *testing.T) {
+func TestWithQueueProcessesQueuedRequestWhenTokenAvailable(t *testing.T) {
 	th, err := NewThrottle[labelRequest, string](Settings{
 		Maximum:  1,
 		Duration: 50 * time.Millisecond,
@@ -434,7 +434,7 @@ func TestThrottleFnWithQueueProcessesQueuedRequestWhenTokenAvailable(t *testing.
 	})
 	require.NoError(t, err)
 
-	call := th.ThrottleFnWithQueue(func(_ context.Context, req labelRequest) (string, error) {
+	call := th.WithQueue(func(_ context.Context, req labelRequest) (string, error) {
 		return req.Label, nil
 	})
 
@@ -452,7 +452,7 @@ func TestThrottleFnWithQueueProcessesQueuedRequestWhenTokenAvailable(t *testing.
 	assert.Equal(t, "queued", res)
 }
 
-func TestThrottleFnWithQueueProcessesQueueInFIFOOrder(t *testing.T) {
+func TestWithQueueProcessesQueueInFIFOOrder(t *testing.T) {
 	th, err := NewThrottle[labelRequest, string](Settings{
 		Maximum:  1,
 		Duration: 50 * time.Millisecond,
@@ -460,7 +460,7 @@ func TestThrottleFnWithQueueProcessesQueueInFIFOOrder(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	call := th.ThrottleFnWithQueue(func(_ context.Context, req labelRequest) (string, error) {
+	call := th.WithQueue(func(_ context.Context, req labelRequest) (string, error) {
 		return req.Label, nil
 	})
 
@@ -488,7 +488,7 @@ func TestThrottleFnWithQueueProcessesQueueInFIFOOrder(t *testing.T) {
 	assert.Equal(t, "third", res)
 }
 
-func TestThrottleFnWithQueueContextCanceledBeforeCall(t *testing.T) {
+func TestWithQueueContextCanceledBeforeCall(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -500,7 +500,7 @@ func TestThrottleFnWithQueueContextCanceledBeforeCall(t *testing.T) {
 	cancel()
 
 	var calls int
-	call := th.ThrottleFnWithQueue(func(context.Context, struct{}) (string, error) {
+	call := th.WithQueue(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -512,7 +512,7 @@ func TestThrottleFnWithQueueContextCanceledBeforeCall(t *testing.T) {
 	assert.Equal(t, 0, calls)
 }
 
-func TestThrottleFnWithQueueDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
+func TestWithQueueDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
 	th, err := NewThrottle[struct{}, string](Settings{
 		Maximum:  1,
 		Duration: time.Second,
@@ -521,7 +521,7 @@ func TestThrottleFnWithQueueDoesNotInvokeEffectorWhenThrottled(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := th.ThrottleFnWithQueue(func(context.Context, struct{}) (string, error) {
+	call := th.WithQueue(func(context.Context, struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})

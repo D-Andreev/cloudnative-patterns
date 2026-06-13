@@ -57,7 +57,7 @@ func TestDebounceInvalidSettings(t *testing.T) {
 	}
 }
 
-func TestDebounceFnFunctionFirst(t *testing.T) {
+func TestFirstFunctionFirst(t *testing.T) {
 	d, err := NewDebounce[struct{}, string](Settings{
 		DebounceType: FunctionFirst,
 		Duration:     1 * time.Second,
@@ -65,7 +65,7 @@ func TestDebounceFnFunctionFirst(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := d.DebounceFirstFn(func(ctx context.Context, _ struct{}) (string, error) {
+	call := d.First(func(ctx context.Context, _ struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -83,7 +83,7 @@ func TestDebounceFnFunctionFirst(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestDebounceFirstFnWaitsForInFlightCall(t *testing.T) {
+func TestFirstWaitsForInFlightCall(t *testing.T) {
 	d, err := NewDebounce[struct{}, string](Settings{
 		DebounceType: FunctionFirst,
 		Duration:     1 * time.Second,
@@ -92,7 +92,7 @@ func TestDebounceFirstFnWaitsForInFlightCall(t *testing.T) {
 
 	started := make(chan struct{})
 	var calls int
-	call := d.DebounceFirstFn(func(ctx context.Context, _ struct{}) (string, error) {
+	call := d.First(func(ctx context.Context, _ struct{}) (string, error) {
 		calls++
 		close(started)
 		select {
@@ -122,7 +122,7 @@ func TestDebounceFirstFnWaitsForInFlightCall(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestDebounceFnFunctionLast(t *testing.T) {
+func TestLastFunctionLast(t *testing.T) {
 	d, err := NewDebounce[struct{}, string](Settings{
 		DebounceType: FunctionLast,
 		Duration:     50 * time.Millisecond,
@@ -130,7 +130,7 @@ func TestDebounceFnFunctionLast(t *testing.T) {
 	require.NoError(t, err)
 
 	var calls int
-	call := d.DebounceLastFn(func(ctx context.Context, _ struct{}) (string, error) {
+	call := d.Last(func(ctx context.Context, _ struct{}) (string, error) {
 		calls++
 		return "ok", nil
 	})
@@ -153,14 +153,14 @@ func TestDebounceFnFunctionLast(t *testing.T) {
 	<-done
 }
 
-func TestDebounceLastFnCancelsSupersededCall(t *testing.T) {
+func TestLastCancelsSupersededCall(t *testing.T) {
 	d, err := NewDebounce[struct{}, string](Settings{
 		DebounceType: FunctionLast,
 		Duration:     200 * time.Millisecond,
 	})
 	require.NoError(t, err)
 
-	call := d.DebounceLastFn(func(ctx context.Context, _ struct{}) (string, error) {
+	call := d.Last(func(ctx context.Context, _ struct{}) (string, error) {
 		select {
 		case <-time.After(500 * time.Millisecond):
 			return "ok", nil

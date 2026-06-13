@@ -66,11 +66,11 @@ func (s *service) reset() error {
 	s.firstDeb = firstDeb
 	s.lastDeb = lastDeb
 
-	s.callFirst = firstDeb.DebounceFirstFn(func(context.Context, emptyRequest) (respBody, error) {
+	s.callFirst = firstDeb.First(func(context.Context, emptyRequest) (respBody, error) {
 		n := int(s.firstCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})
-	s.callLast = lastDeb.DebounceLastFn(func(ctx context.Context, _ emptyRequest) (respBody, error) {
+	s.callLast = lastDeb.Last(func(ctx context.Context, _ emptyRequest) (respBody, error) {
 		n := int(s.lastCalls.Add(1))
 		return respBody{Message: "ok", Calls: n}, nil
 	})

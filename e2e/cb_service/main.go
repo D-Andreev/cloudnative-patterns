@@ -59,7 +59,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	helloWithBreaker := b.BreakerFn(hello)
+	helloWithBreaker := b.Wrap(hello)
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		bytedata, err := io.ReadAll(r.Body)
 		if err != nil {

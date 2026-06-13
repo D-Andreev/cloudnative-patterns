@@ -183,7 +183,7 @@ func TestCircuitBreaker(t *testing.T) {
 			}
 			b, err := NewBreaker[struct{}, string](settings)
 			assert.Equal(t, nil, err, "Invalid settings")
-			c := b.BreakerFn(circuitFn)
+			c := b.Wrap(circuitFn)
 			var results []string
 			var errs []error
 			for i := range tc.callBreakerTimes {
@@ -220,7 +220,7 @@ func TestHalfOpenAllowsOnlyOneProbe(t *testing.T) {
 	}
 	b, err := NewBreaker[struct{}, string](settings)
 	assert.Equal(t, nil, err, "Invalid settings")
-	c := b.BreakerFn(circuitFn)
+	c := b.Wrap(circuitFn)
 
 	_, _ = c(context.Background(), struct{}{})
 	assert.Equal(t, Open, b.State())
@@ -323,7 +323,7 @@ func TestOpenFixedBackoffBlocksUntilBaseElapsed(t *testing.T) {
 	b, err := NewBreaker[struct{}, string](settings)
 	assert.NoError(t, err)
 
-	call := b.BreakerFn(func(ctx context.Context, _ struct{}) (string, error) {
+	call := b.Wrap(func(ctx context.Context, _ struct{}) (string, error) {
 		return "", errors.New("fail")
 	})
 

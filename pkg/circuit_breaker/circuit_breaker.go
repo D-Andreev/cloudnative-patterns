@@ -107,7 +107,7 @@ func (s State) String() string {
 // Circuit executes downstream work for a request and may fail.
 type Circuit[A, T any] func(context.Context, A) (T, error)
 
-// Call is the breaker-wrapped function returned by BreakerFn.
+// Call is the breaker-wrapped function returned by Wrap.
 type Call[A, T any] func(context.Context, A) (T, error)
 
 // IsFailureFunc reports whether an error from the wrapped circuit should count
@@ -193,9 +193,9 @@ func (b *Breaker[A, T]) tryAcquireProbe() bool {
 	}
 }
 
-// BreakerFn wraps circuit and returns a function that enforces breaker semantics.
-// Call BreakerFn once and reuse the returned Call; do not call BreakerFn on every request.
-func (b *Breaker[A, T]) BreakerFn(circuit Circuit[A, T]) Call[A, T] {
+// Wrap wraps circuit and returns a function that enforces breaker semantics.
+// Call Wrap once and reuse the returned Call; do not call Wrap on every request.
+func (b *Breaker[A, T]) Wrap(circuit Circuit[A, T]) Call[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		b.mu.Lock()
 		if !b.tryAcquireProbe() {

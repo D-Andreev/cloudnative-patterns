@@ -53,10 +53,10 @@ func NewThrottle[A, T any](settings Settings) (*Throttle[A, T], error) {
 	}, nil
 }
 
-// ThrottleFnWithError wraps effector with throttle behavior.
+// WithError wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled an error is returned
-func (throttle *Throttle[A, T]) ThrottleFnWithError(e Effector[A, T]) Effector[A, T] {
+func (throttle *Throttle[A, T]) WithError(e Effector[A, T]) Effector[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T
@@ -96,10 +96,10 @@ func (throttle *Throttle[A, T]) ThrottleFnWithError(e Effector[A, T]) Effector[A
 	}
 }
 
-// ThrottleFnWithReplay wraps effector with throttle behavior.
+// WithReplay wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled the last successful response is returned
-func (throttle *Throttle[A, T]) ThrottleFnWithReplay(e Effector[A, T]) Effector[A, T] {
+func (throttle *Throttle[A, T]) WithReplay(e Effector[A, T]) Effector[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T
@@ -143,10 +143,10 @@ func (throttle *Throttle[A, T]) ThrottleFnWithReplay(e Effector[A, T]) Effector[
 	}
 }
 
-// ThrottleFnWithQueue wraps effector with throttle behavior.
+// WithQueue wraps effector with throttle behavior.
 // The Effector will be executed at most Maximum times for given Duration
 // If the Effector is throttled the requests are put in a queue and invoked when tokens are available
-func (throttle *Throttle[A, T]) ThrottleFnWithQueue(e Effector[A, T]) Effector[A, T] {
+func (throttle *Throttle[A, T]) WithQueue(e Effector[A, T]) Effector[A, T] {
 	return func(ctx context.Context, req A) (T, error) {
 		if ctx.Err() != nil {
 			var zeroT T

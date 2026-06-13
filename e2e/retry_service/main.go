@@ -74,7 +74,7 @@ func main() {
 		}
 
 		var attempts int
-		call := retrier.RetryFn(func(context.Context, reqBody) (respBody, error) {
+		call := retrier.Wrap(func(context.Context, reqBody) (respBody, error) {
 			attempts++
 			if attempts < req.FailUntil {
 				return respBody{}, errors.New(errTemporary)

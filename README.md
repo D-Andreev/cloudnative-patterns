@@ -16,7 +16,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Debounce](#debounce)
 - [x] [Retry](#retry)
 - [x] [Throttle](#throttle)
-- [ ] [Timeout](#timeout)
+- [x] [Timeout](#timeout)
 
 ## Install
 
@@ -511,4 +511,59 @@ The `"queued"` request was stored when throttled and executed when a later calle
 
 ## Timeout
 
-Coming soon.
+> Stop waiting for a slow operation once a context deadline is reached. The wrapped function runs in a goroutine; if the caller's context expires first, it returns immediately with `ctx.Err()` instead of blocking until the work finishes.
+
+### Usage
+
+Pass a deadline with `context.WithTimeout` (or cancel manually). Useful when downstream code does not accept a context but the caller still needs an upper bound on wait time.
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	timeout "github.com/D-Andreev/cloudnative-patterns/pkg/timeout"
+)
+
+type FetchRequest struct {
+	URL string
+}
+
+func fetchRemote(_ FetchRequest) (string, error) {
+	time.Sleep(500 * time.Millisecond)
+	return "payload", nil
+}
+
+func main() {
+	tm, err := timeout.NewTimeout[FetchRequest, string]()
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	call := tm.TimeoutFn(fetchRemote)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err = call(ctx, FetchRequest{URL: "https://example.com"})
+	elapsed := time.Since(start)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		fmt.Printf("gave up after %s: %v\n", elapsed.Round(time.Millisecond), err)
+	}
+}
+```
+
+**Output**
+
+```sh
+gave up after 100ms: context deadline exceeded
+```
+
+The caller returns after roughly the context timeout. The inner function may still finish in the background; design `fetchRemote` accordingly if that matters (for example by making it idempotent or cancellable at a lower layer).

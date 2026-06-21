@@ -6,8 +6,8 @@ import "sync"
 // The Source channel type, receive only
 type Source[T any] <-chan T
 
-// The Destination channel type
-type Destination[T any] chan T
+// The Destination channel type, receive only
+type Destination[T any] <-chan T
 
 // FanIn struct
 type FanIn[T any] struct{}
@@ -19,7 +19,7 @@ func NewFanIn[T any]() *FanIn[T] {
 
 // Funnel accepts N source channels and forwards the values to destination channel.
 func (fanIn *FanIn[T]) Funnel(sources ...Source[T]) Destination[T] {
-	dest := make(Destination[T])
+	dest := make(chan T)
 	wg := sync.WaitGroup{}
 	wg.Add(len(sources))
 

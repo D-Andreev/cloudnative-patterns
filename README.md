@@ -17,6 +17,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Retry](#retry)
 - [x] [Throttle](#throttle)
 - [x] [Timeout](#timeout)
+- [x] [Fan in](#fan-in)
 
 ## Install
 
@@ -567,3 +568,62 @@ gave up after 100ms: context deadline exceeded
 ```
 
 The caller returns after roughly the context timeout. The inner function may still finish in the background; design `fetchRemote` accordingly if that matters (for example by making it idempotent or cancellable at a lower layer).
+
+## Fan-in
+
+> Merge multiple input channels onto one output channel. Each source is read concurrently; values arrive on the destination as they are received. The destination closes once every source has been closed and drained.
+
+### Usage
+
+Create source channels, start producers that send values and then close their channel, and pass the sources to `Funnel`. Read from the returned destination until it closes.
+
+```go
+package main
+
+import (
+	"fmt"
+
+	fanin "github.com/D-Andreev/cloudnative-patterns/pkg/fan_in"
+)
+
+func main() {
+	fi := fanin.NewFanIn[int]()
+
+	sourceA := make(chan int)
+	sourceB := make(chan int)
+
+	go func() {
+		defer close(sourceA)
+		sourceA <- 1
+		sourceA <- 2
+	}()
+
+	go func() {
+		defer close(sourceB)
+		sourceB <- 10
+		sourceB <- 20
+	}()
+
+	dest := fi.Funnel(sourceA, sourceB)
+
+	for v := range dest {
+		fmt.Println(v)
+	}
+}
+```
+
+**Output** (order may vary)
+
+```sh
+1
+10
+2
+20
+```
+
+You can also pass a slice with the spread operator:
+
+```go
+sources := []fanin.Source[int]{sourceA, sourceB}
+dest := fi.Funnel(sources...)
+```

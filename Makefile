@@ -7,6 +7,7 @@ E2E_DEBOUNCE_SERVICE := $(BIN_DIR)/e2e-debounce-service
 E2E_RETRY_SERVICE := $(BIN_DIR)/e2e-retry-service
 E2E_THROTTLE_SERVICE := $(BIN_DIR)/e2e-throttle-service
 E2E_TIMEOUT_SERVICE := $(BIN_DIR)/e2e-timeout-service
+E2E_FAN_IN_SERVICE := $(BIN_DIR)/e2e-fan-in-service
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 PKG := ./pkg/...
@@ -29,6 +30,7 @@ build:
 	$(GO) build -o $(E2E_RETRY_SERVICE) ./e2e/retry_service/main.go
 	$(GO) build -o $(E2E_THROTTLE_SERVICE) ./e2e/throttle_service/main.go
 	$(GO) build -o $(E2E_TIMEOUT_SERVICE) ./e2e/timeout_service/main.go
+	$(GO) build -o $(E2E_FAN_IN_SERVICE) ./e2e/fan_in_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)

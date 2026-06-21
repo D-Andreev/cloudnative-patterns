@@ -18,6 +18,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Throttle](#throttle)
 - [x] [Timeout](#timeout)
 - [x] [Fan in](#fan-in)
+- [x] [Fan out](#fan-out)
 
 ## Install
 
@@ -626,4 +627,62 @@ You can also pass a slice with the spread operator:
 ```go
 sources := []fanin.Source[int]{sourceA, sourceB}
 dest := fi.Funnel(sources...)
+```
+
+## Fan-out
+
+> Distribute messages from one input channel across multiple output channels. Each value is delivered to exactly one destination, so concurrent workers can process the stream in parallel. Close the source when sending is done; read from every destination until it closes.
+
+### Usage
+
+Start readers on the returned destinations before sending to the source. Each destination is receive-only (`<-chan T`).
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+
+	fanout "github.com/D-Andreev/cloudnative-patterns/pkg/fan_out"
+)
+
+func main() {
+	fo := fanout.NewFanOut[int]()
+	source := make(chan int)
+
+	dests := fo.Split(source, 3)
+
+	var (
+		mu       sync.Mutex
+		received []int
+		wg       sync.WaitGroup
+	)
+
+	for _, dest := range dests {
+		wg.Add(1)
+		go func(dest fanout.Destination[int]) {
+			defer wg.Done()
+			for v := range dest {
+				mu.Lock()
+				received = append(received, v)
+				mu.Unlock()
+			}
+		}(dest)
+	}
+
+	for i := range 10 {
+		source <- i
+	}
+	close(source)
+
+	wg.Wait()
+	fmt.Println(received) // all values 0..9, order may vary
+}
+```
+
+**Output** (order may vary)
+
+```sh
+[3 0 8 1 9 2 4 5 6 7]
 ```

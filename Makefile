@@ -10,6 +10,7 @@ E2E_TIMEOUT_SERVICE := $(BIN_DIR)/e2e-timeout-service
 E2E_FAN_IN_SERVICE := $(BIN_DIR)/e2e-fan-in-service
 E2E_FAN_OUT_SERVICE := $(BIN_DIR)/e2e-fan-out-service
 E2E_FUTURE_SERVICE := $(BIN_DIR)/e2e-future-service
+E2E_SHARDING_SERVICE := $(BIN_DIR)/e2e-sharding-service
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 PKG := ./pkg/...
@@ -35,6 +36,7 @@ build:
 	$(GO) build -o $(E2E_FAN_IN_SERVICE) ./e2e/fan_in_service/main.go
 	$(GO) build -o $(E2E_FAN_OUT_SERVICE) ./e2e/fan_out_service/main.go
 	$(GO) build -o $(E2E_FUTURE_SERVICE) ./e2e/future_service/main.go
+	$(GO) build -o $(E2E_SHARDING_SERVICE) ./e2e/sharding_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)

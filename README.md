@@ -17,6 +17,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Retry](#retry)
 - [x] [Throttle](#throttle)
 - [x] [Timeout](#timeout)
+- [x] [Future](#future)
 - [x] [Fan in](#fan-in)
 - [x] [Fan out](#fan-out)
 
@@ -569,6 +570,66 @@ gave up after 100ms: context deadline exceeded
 ```
 
 The caller returns after roughly the context timeout. The inner function may still finish in the background; design `fetchRemote` accordingly if that matters (for example by making it idempotent or cancellable at a lower layer).
+
+## Future
+
+> Start work asynchronously and block only when you need the result. `Async` returns a `Future` handle immediately; call `Result` later to wait for the outcome. Use this to overlap independent operations instead of waiting for each one sequentially.
+
+### Usage
+
+Launch several tasks, do other setup while they run, then read each result:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	future "github.com/D-Andreev/cloudnative-patterns/pkg/future"
+)
+
+func fetchUser(_ context.Context) (string, error) {
+	time.Sleep(100 * time.Millisecond)
+	return "alice", nil
+}
+
+func fetchOrders(_ context.Context) (int, error) {
+	time.Sleep(150 * time.Millisecond)
+	return 3, nil
+}
+
+func main() {
+	ctx := context.Background()
+
+	userF := future.Async(ctx, fetchUser)
+	ordersF := future.Async(ctx, fetchOrders)
+
+	// Both tasks are already running; this work overlaps with them.
+	time.Sleep(50 * time.Millisecond)
+
+	user, err := userF.Result()
+	if err != nil {
+		fmt.Println("user:", err)
+		return
+	}
+
+	orders, err := ordersF.Result()
+	if err != nil {
+		fmt.Println("orders:", err)
+		return
+	}
+
+	fmt.Printf("user=%s orders=%d\n", user, orders)
+}
+```
+
+**Output**
+
+```sh
+user=alice orders=3
+```
 
 ## Fan-in
 

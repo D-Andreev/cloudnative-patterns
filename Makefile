@@ -9,6 +9,7 @@ E2E_THROTTLE_SERVICE := $(BIN_DIR)/e2e-throttle-service
 E2E_TIMEOUT_SERVICE := $(BIN_DIR)/e2e-timeout-service
 E2E_FAN_IN_SERVICE := $(BIN_DIR)/e2e-fan-in-service
 E2E_FAN_OUT_SERVICE := $(BIN_DIR)/e2e-fan-out-service
+E2E_FUTURE_SERVICE := $(BIN_DIR)/e2e-future-service
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 PKG := ./pkg/...
@@ -33,12 +34,13 @@ build:
 	$(GO) build -o $(E2E_TIMEOUT_SERVICE) ./e2e/timeout_service/main.go
 	$(GO) build -o $(E2E_FAN_IN_SERVICE) ./e2e/fan_in_service/main.go
 	$(GO) build -o $(E2E_FAN_OUT_SERVICE) ./e2e/fan_out_service/main.go
+	$(GO) build -o $(E2E_FUTURE_SERVICE) ./e2e/future_service/main.go
 
 test-unit:
 	$(GO) test -count=1 -v $(PKG)
 
 test-e2e:
-	$(GO) test -count=1 -v -timeout 60s $(E2E)
+	$(GO) test -count=1 -v -timeout 120s $(E2E)
 
 test: test-unit test-e2e
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCircuitBreakerInvalidSettings(t *testing.T) {
@@ -309,6 +310,67 @@ func TestNewBreakerDefaultOpenBackoff(t *testing.T) {
 	assert.Equal(t, time.Duration(0), b.openBackoff.Max)
 	assert.Equal(t, 2*time.Second, b.openBackoff.Duration(0))
 	assert.Equal(t, 4*time.Second, b.openBackoff.Duration(1))
+}
+
+func TestREADMEUsage(t *testing.T) {
+	type CallRequest struct{}
+
+	callDownstream := func(ctx context.Context, _ CallRequest) (string, error) {
+		return "", errors.New("timeout")
+	}
+
+	settings := Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: 3,
+	}
+	b, err := NewBreaker[CallRequest, string](settings)
+	require.NoError(t, err)
+	call := b.Wrap(callDownstream)
+
+	type callOutcome struct {
+		breakerOpen bool
+		downstream  bool
+		state       State
+	}
+
+	want := []callOutcome{
+		{downstream: true, state: Closed},
+		{downstream: true, state: Closed},
+		{downstream: true, state: Open},
+		{breakerOpen: true, state: Open},
+		{breakerOpen: true, state: Open},
+	}
+
+	for i, wantCall := range want {
+		_, err := call(context.Background(), CallRequest{})
+
+		switch {
+		case errors.Is(err, BreakerErrResponse):
+			assert.True(t, wantCall.breakerOpen, "call %d", i+1)
+		case err != nil:
+			assert.True(t, wantCall.downstream, "call %d", i+1)
+			assert.Equal(t, "timeout", err.Error())
+		default:
+			t.Fatalf("call %d: unexpected success", i+1)
+		}
+		assert.Equal(t, wantCall.state, b.State(), "call %d", i+1)
+	}
+}
+
+func TestREADMEOpenFixedBackoffSettings(t *testing.T) {
+	settings := Settings{
+		IsFailure: func(err error) bool { return err != nil },
+		Threshold: 3,
+		OpenBackoff: OpenBackoff{
+			Strategy: OpenFixed,
+			Base:     30 * time.Second,
+		},
+	}
+
+	b, err := NewBreaker[struct{}, string](settings)
+	require.NoError(t, err)
+	assert.Equal(t, OpenFixed, b.openBackoff.Strategy)
+	assert.Equal(t, 30*time.Second, b.openBackoff.Base)
 }
 
 func TestOpenFixedBackoffBlocksUntilBaseElapsed(t *testing.T) {

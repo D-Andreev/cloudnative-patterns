@@ -3,6 +3,7 @@ package throttle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -58,6 +59,86 @@ func TestNewThrottleValidSettings(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, th)
+}
+
+func TestREADMEWithError(t *testing.T) {
+	th, err := NewThrottle[struct{}, string](Settings{
+		Maximum:  2,
+		Duration: time.Second,
+		Refill:   2,
+	})
+	require.NoError(t, err)
+
+	call := th.WithError(func(context.Context, struct{}) (string, error) {
+		return "ok", nil
+	})
+
+	for i := 1; i <= 3; i++ {
+		res, err := call(context.Background(), struct{}{})
+		if i <= 2 {
+			require.NoError(t, err)
+			assert.Equal(t, "ok", res)
+			continue
+		}
+		require.Error(t, err)
+		assert.ErrorIs(t, err, tooManyCalls)
+		assert.Empty(t, res)
+	}
+}
+
+func TestREADMEWithReplay(t *testing.T) {
+	th, err := NewThrottle[struct{}, string](Settings{
+		Maximum:  1,
+		Duration: time.Second,
+		Refill:   1,
+	})
+	require.NoError(t, err)
+
+	attempts := 0
+	call := th.WithReplay(func(context.Context, struct{}) (string, error) {
+		attempts++
+		return fmt.Sprintf("value-%d", attempts), nil
+	})
+
+	res1, err := call(context.Background(), struct{}{})
+	require.NoError(t, err)
+	res2, err := call(context.Background(), struct{}{})
+	require.NoError(t, err)
+
+	assert.Equal(t, "value-1", res1)
+	assert.Equal(t, "value-1", res2)
+	assert.Equal(t, 1, attempts)
+}
+
+func TestREADMEWithQueue(t *testing.T) {
+	type QueueRequest struct {
+		Label string
+	}
+
+	th, err := NewThrottle[QueueRequest, string](Settings{
+		Maximum:  1,
+		Duration: 100 * time.Millisecond,
+		Refill:   1,
+	})
+	require.NoError(t, err)
+
+	call := th.WithQueue(func(_ context.Context, req QueueRequest) (string, error) {
+		return req.Label, nil
+	})
+
+	res, err := call(context.Background(), QueueRequest{Label: "first"})
+	require.NoError(t, err)
+	assert.Equal(t, "first", res)
+
+	_, err = call(context.Background(), QueueRequest{Label: "queued"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, tooManyCalls)
+
+	time.Sleep(150 * time.Millisecond)
+
+	res, err = call(context.Background(), QueueRequest{Label: "caller"})
+	require.NoError(t, err)
+	assert.Equal(t, "queued", res)
 }
 
 func TestWithErrorAllowsCallsUpToMaximum(t *testing.T) {

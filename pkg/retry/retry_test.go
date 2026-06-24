@@ -19,6 +19,30 @@ func TestNewRetry(t *testing.T) {
 	require.NotNil(t, r)
 }
 
+func TestREADMEUsage(t *testing.T) {
+	type RetryRequest struct{}
+
+	r, err := NewRetry[RetryRequest, string](Settings{
+		Delay:       100 * time.Millisecond,
+		MaxFailures: 3,
+	})
+	require.NoError(t, err)
+
+	attempts := 0
+	call := r.Wrap(func(context.Context, RetryRequest) (string, error) {
+		attempts++
+		if attempts < 3 {
+			return "", errors.New("temporary")
+		}
+		return "ok", nil
+	})
+
+	res, err := call(context.Background(), RetryRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, "ok", res)
+	assert.Equal(t, 3, attempts)
+}
+
 func TestWrapSuccessOnFirstAttempt(t *testing.T) {
 	r, err := NewRetry[struct{}, string](Settings{
 		Delay:       10 * time.Millisecond,

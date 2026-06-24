@@ -3,6 +3,7 @@ package debounce
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,6 +56,83 @@ func TestDebounceInvalidSettings(t *testing.T) {
 			assert.NotNil(t, d)
 		})
 	}
+}
+
+func TestREADMEFunctionFirst(t *testing.T) {
+	type FetchRequest struct{}
+
+	fetch := func(ctx context.Context, _ FetchRequest) (string, error) {
+		return "ok", nil
+	}
+
+	d, err := NewDebounce[FetchRequest, string](Settings{
+		DebounceType: FunctionFirst,
+		Duration:     1 * time.Second,
+	})
+	require.NoError(t, err)
+
+	call := d.First(fetch)
+
+	res1, err1 := call(context.Background(), FetchRequest{})
+	res2, err2 := call(context.Background(), FetchRequest{})
+	res3, err3 := call(context.Background(), FetchRequest{})
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.NoError(t, err3)
+	assert.Equal(t, "ok", res1)
+	assert.Equal(t, "ok", res2)
+	assert.Equal(t, "ok", res3)
+}
+
+func TestREADMEFunctionLast(t *testing.T) {
+	type SearchRequest struct {
+		Query string
+	}
+
+	var calls int
+	search := func(ctx context.Context, req SearchRequest) (string, error) {
+		calls++
+		select {
+		case <-time.After(50 * time.Millisecond):
+			return "results for " + req.Query, nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	d, err := NewDebounce[SearchRequest, string](Settings{
+		DebounceType: FunctionLast,
+		Duration:     200 * time.Millisecond,
+	})
+	require.NoError(t, err)
+
+	call := d.Last(search)
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := call(context.Background(), SearchRequest{Query: "a"})
+		assert.True(t, errors.Is(err, context.Canceled))
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := call(context.Background(), SearchRequest{Query: "ab"})
+		assert.True(t, errors.Is(err, context.Canceled))
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	res, err := call(context.Background(), SearchRequest{Query: "abc"})
+	require.NoError(t, err)
+	assert.Equal(t, "results for abc", res)
+	assert.Equal(t, 1, calls)
+
+	wg.Wait()
 }
 
 func TestFirstFunctionFirst(t *testing.T) {

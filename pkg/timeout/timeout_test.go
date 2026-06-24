@@ -16,6 +16,33 @@ func TestNewTimeout(t *testing.T) {
 	require.NotNil(t, tm)
 }
 
+func TestREADMEUsage(t *testing.T) {
+	type FetchRequest struct {
+		URL string
+	}
+
+	fetchRemote := func(_ FetchRequest) (string, error) {
+		time.Sleep(500 * time.Millisecond)
+		return "payload", nil
+	}
+
+	tm, err := NewTimeout[FetchRequest, string]()
+	require.NoError(t, err)
+
+	call := tm.TimeoutFn(fetchRemote)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err = call(ctx, FetchRequest{URL: "https://example.com"})
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond)
+	assert.Less(t, elapsed, 200*time.Millisecond)
+}
+
 func TestTimeoutFnSuccess(t *testing.T) {
 	tm, err := NewTimeout[struct{}, string]()
 	require.NoError(t, err)

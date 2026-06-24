@@ -12,6 +12,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestREADMEUsage(t *testing.T) {
+	fetchUser := func(_ context.Context) (string, error) {
+		time.Sleep(100 * time.Millisecond)
+		return "alice", nil
+	}
+
+	fetchOrders := func(_ context.Context) (int, error) {
+		time.Sleep(150 * time.Millisecond)
+		return 3, nil
+	}
+
+	ctx := context.Background()
+
+	userF := Async(ctx, fetchUser)
+	ordersF := Async(ctx, fetchOrders)
+
+	time.Sleep(50 * time.Millisecond)
+
+	user, err := userF.Result()
+	require.NoError(t, err)
+
+	orders, err := ordersF.Result()
+	require.NoError(t, err)
+
+	assert.Equal(t, "alice", user)
+	assert.Equal(t, 3, orders)
+}
+
 func TestAsyncSuccess(t *testing.T) {
 	f := Async(context.Background(), func(context.Context) (string, error) {
 		return "ok", nil

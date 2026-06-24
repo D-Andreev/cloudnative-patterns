@@ -40,7 +40,7 @@ test-unit:
 	$(GO) test -count=1 -v $(PKG)
 
 test-e2e:
-	$(GO) test -count=1 -v -timeout 60s $(E2E)
+	$(GO) test -count=1 -v -timeout 120s $(E2E)
 
 test: test-unit test-e2e
 

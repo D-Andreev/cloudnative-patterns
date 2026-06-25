@@ -20,6 +20,7 @@ Implementations of various cloud native patterns with Go.
 - [x] [Future](#future)
 - [x] [Fan in](#fan-in)
 - [x] [Fan out](#fan-out)
+- [x] [Sharding](#sharding)
 
 ## Install
 
@@ -746,4 +747,45 @@ func main() {
 
 ```sh
 [3 0 8 1 9 2 4 5 6 7]
+```
+
+## Sharding
+
+> Split a large in-memory map into multiple partitions, each guarded by its own read/write lock. Keys that hash to different shards can be read and written concurrently without blocking each other, which reduces lock contention compared to a single `sync.RWMutex` around one map.
+
+### Usage
+
+Use when many goroutines access different keys at the same time (for example a per-user cache or rate-limit counter store). Pick a shard count that matches expected concurrency; more shards mean finer-grained locking but more memory overhead.
+
+```go
+package main
+
+import (
+	"fmt"
+
+	sharding "github.com/D-Andreev/cloudnative-patterns/pkg/sharding"
+)
+
+func main() {
+	sm := sharding.NewShardedMap[string, int](8)
+
+	sm.Set("user:42", 100)
+
+	fmt.Println(sm.Get("user:42"))    // 100
+	fmt.Println(sm.Contains("user:42")) // true
+
+	sm.Delete("user:42")
+
+	fmt.Println(sm.Contains("user:42")) // false
+	fmt.Println(sm.Get("user:42"))      // 0
+}
+```
+
+**Output**
+
+```sh
+100
+true
+false
+0
 ```
